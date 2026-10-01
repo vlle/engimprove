@@ -12,3 +12,7 @@ code-style.md
 *.log
 *.pid
 .DS_Store
+demo/.root/
+demo/node_modules/
+demo/.frames/
+demo/.sheet/

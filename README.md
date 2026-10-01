@@ -5,6 +5,21 @@ prompts in Claude Code, texts you send for review, spoken answers — stores the
 append-only database, and drills them back at you as flashcards built from your own phrases:
 in the web app, in the terminal, and as a notification when a topic is ripe.
 
+<p align="center">
+  <img src="demo/assets/web.gif" alt="The web app: today's topics, a drill, the mistake archive" width="760">
+</p>
+
+<table>
+  <tr>
+    <td><img src="demo/assets/web-today-light.png" alt="Today: the ripe topics"></td>
+    <td><img src="demo/assets/web-drill-dark.png" alt="A cloze card in dark theme"></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="demo/assets/terminal.gif" alt="The terminal: end-of-turn corrections, topic status, drill cards" width="760">
+</p>
+
 The idea: you already write English all day. Instead of a separate study session, the mistakes
 you actually make become the study material, with spaced repetition (Leitner intervals)
 deciding what to review and when.
@@ -149,6 +164,14 @@ a fresh clone fills the rest in on first run.
 - Changed the frontend → `go build -o bin/eng ./cmd/eng && eng restart` (the static files
   are embedded in the binary).
 - Tests: `go test ./...`.
+
+## Demo recordings
+
+`demo/assets/` holds the GIFs and screenshots above. They run on a throwaway root built from
+`examples/` (`scripts/demoroot`), never on live data, with the language set to English.
+The end-of-turn corrections in the terminal GIF are seeded, so no LLM call is involved.
+Rebuild with `demo/build.sh`; it needs `vhs`, `ffmpeg`, Node and Chrome
+(`CHROME=/path/to/chrome` if it is not in `/Applications`).
 
 ## Contributing
 
