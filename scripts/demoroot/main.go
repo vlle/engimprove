@@ -228,10 +228,15 @@ func drillHistory(cfg config.Config, entries []data.Entry) ([]topics.Session, []
 // writeFeedback leaves the corrections the stop hook prints at the end of a turn.
 func writeFeedback(st data.Store, entries []data.Entry) error {
 	var items []hook.FeedbackItem
+	seen := map[string]bool{}
 	for _, e := range entries {
-		if e.Date != "2026-10-01" || e.Kind != "grammar" || len(items) == 3 {
+		if e.Date != "2026-10-01" || e.Kind != "grammar" || len(items) == 3 || len(e.Before) > 26 || len(e.After) > 32 {
 			continue
 		}
+		if seen[e.Category] {
+			continue
+		}
+		seen[e.Category] = true
 		items = append(items, hook.FeedbackItem{
 			TS: "2026-10-01T12:00:00+02:00", Before: e.Before, After: e.After,
 			Kind: e.Kind, Category: e.Category, Rule: e.Rule,
