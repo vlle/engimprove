@@ -263,9 +263,9 @@
       },
       {
         "title": "Business email register",
-        "body": "Hello Evelyn, (comma, not !). Sign-off and name on separate lines. Small numbers in words: one month.",
+        "body": "Hello Jane, (comma, not !). Sign-off and name on separate lines. Small numbers in words: one month.",
         "examples": [
-          {"bad": "Hello Evelyn!", "good": "Hello Evelyn,"},
+          {"bad": "Hello Jane!", "good": "Hello Jane,"},
           {"bad": "This took me 1 month", "good": "This took me one month"}
         ]
       }

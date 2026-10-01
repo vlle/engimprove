@@ -4,11 +4,9 @@
   "notify": true,
   "whisper_model": "models/ggml-small.en.bin",
   "claude_model": "sonnet",
-  "openrouter_env": "~/wwrum/scripts/job-radar/fetch-openrouter-env.sh",
   "openrouter_model": "anthropic/claude-sonnet-5.5",
-  "private_roots": [
-    "~/wwrum"
-  ],
+  "language": "Russian",
+  "private_roots": [],
   "topics": [
     {
       "id": "the",

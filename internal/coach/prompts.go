@@ -127,13 +127,13 @@ func (c *Coach) CheckPrompt(ctx context.Context, s data.Store, text string, priv
 		return PromptCheck{}, "", err
 	}
 	var b strings.Builder
-	b.WriteString(`You check English written by a Russian-speaking software engineer (B1-B2) in a chat message to an AI coding assistant.
+	fmt.Fprintf(&b, `You check English written by a software engineer (B1-B2), a %[1]s-speaking learner, in a chat message to an AI coding assistant.
 Log only real mistakes worth learning from; he wants to fix his grammar, articles above all.
 
 Log:
 - grammar: every category (articles, tenses, prepositions, agreement, word order, conditionals, modals, ...).
 - punctuation: commas, apostrophes, sentence-boundaries, hyphenation. Never capitalization.
-- lexical: calques from Russian, wrong collocations, false friends, wrong word.
+- lexical: calques from %[1]s, wrong collocations, false friends, wrong word.
 - spelling: only consistent misspellings (everytime, recieve) and homophone mix-ups (its/it's, then/than, lose/loose).
 
 Chat register is NOT a mistake, never log it: lowercase sentence starts, lowercase "i", lowercase names
@@ -151,7 +151,7 @@ original: only the sentences that contain logged mistakes, verbatim, except that
 with the same replacements, and with the logged mistakes fixed.
 No mistakes: errors [], original "", corrected "".
 
-`)
+`, c.cfg.Language)
 	b.WriteString(tax)
 	b.WriteString("\n")
 	b.WriteString(rules)
@@ -195,7 +195,7 @@ func (c *Coach) ReviewSpeech(ctx context.Context, s data.Store, question, transc
 		return SpeechReview{}, "", err
 	}
 	var b strings.Builder
-	b.WriteString(`You are an English grammar coach for a Russian-speaking software engineer (B1-B2).
+	fmt.Fprintf(&b, `You are an English grammar coach for a %[1]s-speaking software engineer (B1-B2).
 He answered a speaking prompt out loud; the text below is a Whisper transcript.
 Find his real grammar and word-choice mistakes. Rules:
 - Ignore punctuation, capitalization and spelling: those come from the transcriber, not from him.
@@ -207,7 +207,7 @@ Find his real grammar and word-choice mistakes. Rules:
 - tips: at most 3 short, concrete tips in English aimed at his most frequent patterns.
 - fluency: one sentence in English about how natural the answer sounded.
 
-`)
+`, c.cfg.Language)
 	b.WriteString(tax)
 	b.WriteString("\n")
 	b.WriteString(rules)
@@ -236,10 +236,10 @@ const packSchema = `{"type":"object","additionalProperties":false,"properties":{
 // GeneratePack writes n new exercises that target the rules behind the given mistakes.
 func (c *Coach) GeneratePack(ctx context.Context, title string, mistakes []data.Entry, n int) ([]cards.PackItem, error) {
 	var b strings.Builder
-	fmt.Fprintf(&b, `Create %d new English exercises on the topic "%s" for a Russian-speaking software engineer.
+	fmt.Fprintf(&b, `Create %d new English exercises on the topic %[2]q for a %[3]s-speaking software engineer.
 They must target exactly the rules behind his real mistakes listed below, weighted toward the most frequent rules.
-Contexts: his work (Go backend services, Kafka, code review, merge requests, a consumer-to-consumer marketplace),
-job hunting (cover letters, interviews), and daily life in Belgrade. Never reuse his sentences verbatim.
+Contexts: his work (software engineering: backend services, code review, merge requests), job hunting
+(cover letters, interviews), and daily life. Never reuse his sentences verbatim.
 
 Exercise formats:
 - "cloze": text with one or two gaps written as ___ ; answers holds one string per gap in order;
@@ -251,7 +251,7 @@ Exercise formats:
 Mix: about two thirds cloze, one third fix. Vary difficulty; avoid items where two options are both fine.
 
 His mistakes (before → after · rule):
-`, n, title)
+`, n, title, c.cfg.Language)
 	for _, e := range mistakes {
 		fmt.Fprintf(&b, "- %s → %s · %s\n", e.Before, e.After, e.Rule)
 	}

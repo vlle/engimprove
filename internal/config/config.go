@@ -33,7 +33,9 @@ type Config struct {
 	OpenRouterModel string `json:"openrouter_model"`
 	// PrivateRoots are project trees whose prompts never leave for OpenRouter.
 	PrivateRoots []string `json:"private_roots"`
-	Topics       []Topic  `json:"topics"`
+	// Language is the learner's native language: the LLM explains in it.
+	Language string `json:"language"`
+	Topics   []Topic `json:"topics"`
 }
 
 // Load reads config/eng.json and fills defaults for unset fields.
@@ -56,6 +58,9 @@ func Load(s data.Store) (Config, error) {
 	}
 	if cfg.OpenRouterModel == "" {
 		cfg.OpenRouterModel = "anthropic/claude-sonnet-5.5"
+	}
+	if cfg.Language == "" {
+		cfg.Language = "English"
 	}
 	if len(cfg.Topics) == 0 {
 		return Config{}, fmt.Errorf("%s: no topics", s.Path("config", "eng.json"))

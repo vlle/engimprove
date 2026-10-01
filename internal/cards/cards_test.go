@@ -90,10 +90,10 @@ func TestUnguessableGapBecomesFix(t *testing.T) {
 }
 
 func TestContext(t *testing.T) {
-	text := "# x\n\n## Original\nI helped introduce School 21 to Surgut (Russia's Siberian city) as volunteer from Moscow. " +
-		"Managed exams.\n\n## Corrected\nI helped introduce School 21 to Surgut (a Siberian city in Russia).\n"
+	text := "# x\n\n## Original\nI helped introduce the school to the city (Russia's Siberian city) as volunteer from Moscow. " +
+		"Managed exams.\n\n## Corrected\nI helped introduce the school to the city (a Siberian city in Russia).\n"
 	got := Context(text, "Russia's   Siberian city")
-	want := "I helped introduce School 21 to Surgut (Russia's Siberian city) as volunteer from Moscow."
+	want := "I helped introduce the school to the city (Russia's Siberian city) as volunteer from Moscow."
 	if got != want {
 		t.Fatalf("Context = %q", got)
 	}

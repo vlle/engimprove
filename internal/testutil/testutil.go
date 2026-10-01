@@ -11,10 +11,10 @@ import (
 	"engimprove/internal/data"
 )
 
-const taxonomy = "# Taxonomy\n\n## kind: grammar\n\n| category | что это |\n|---|---|\n" +
+const taxonomy = "# Taxonomy\n\n## kind: grammar\n\n| category | what it is |\n|---|---|\n" +
 	"| `articles` | a / an / the |\n| `prepositions` | x |\n| `modals` | x |\n\n" +
-	"## kind: punctuation\n\n| category | что это |\n|---|---|\n| `apostrophes` | x |\n| `capitalization` | x |\n\n" +
-	"## kind: lexical (в тексте не применяется)\n\n| category | что это |\n|---|---|\n| `calque` | x |\n"
+	"## kind: punctuation\n\n| category | what it is |\n|---|---|\n| `apostrophes` | x |\n| `capitalization` | x |\n\n" +
+	"## kind: lexical (not applied to the text)\n\n| category | what it is |\n|---|---|\n| `calque` | x |\n"
 
 // Store creates a root with the given error log lines and a small config.
 func Store(t *testing.T, lines ...string) (data.Store, config.Config) {

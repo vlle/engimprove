@@ -16,7 +16,7 @@ func TestExplanationPromptIncludesFullCardContext(t *testing.T) {
 		After: "opened the PR", Note: "the PR is already known",
 		Context: "I opened a PR yesterday. Can you review the PR?",
 	}
-	prompt, err := explanationPrompt(card, "a", "A known referent uses the.")
+	prompt, err := explanationPrompt("Russian", card, "a", "A known referent uses the.")
 	if err != nil {
 		t.Fatal(err)
 	}

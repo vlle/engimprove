@@ -15,7 +15,7 @@ func TestAnalyze(t *testing.T) {
 		{"slash command with prose", "/goal create an english learning machine with a frontend", true},
 		{"bare slash command", "/code-review high", false},
 		{"pasted english, russian ask", "переведи это <pasted_content id=x>We are looking for a senior engineer with strong Go skills</pasted_content id=x>", false},
-		{"urls and paths", "глянь https://gitlab.example.com/c2c/adverts/-/merge_requests/12 и ~/wwrum/gateway/cmd/main.go", false},
+		{"urls and paths", "глянь https://gitlab.example.com/team/adverts/-/merge_requests/12 и ~/work/gateway/cmd/main.go", false},
 		{"casual english", "can u check why the consumer in event-content is stuck, it was working yesterday", true},
 		{"code fence only", "```go\nfunc main() { fmt.Println(\"hello world from go\") }\n```", false},
 	}

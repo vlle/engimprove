@@ -13,7 +13,7 @@ const seed = `{"id":"2026-10-01-001","date":"2026-10-01","text_id":"t","kind":"g
 func TestLogAssignsIDsCountsAndArchives(t *testing.T) {
 	st, _ := testutil.Store(t, seed)
 	logged, textID, err := Log(st, Input{
-		Date: "2026-10-01", Source: "prompt", Project: "SCHOOL21",
+		Date: "2026-10-01", Source: "prompt", Project: "PROJECT",
 		Original: "make hook async", Corrected: "make the hook async",
 		Errors: []NewError{
 			{Category: "articles", Rule: "missing definite article before a known referent", Before: "make hook async", After: "make the hook async"},
@@ -23,7 +23,7 @@ func TestLogAssignsIDsCountsAndArchives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if textID != "2026-10-01-prompts-school21" {
+	if textID != "2026-10-01-prompts-project" {
 		t.Fatalf("text_id = %s", textID)
 	}
 	if logged[0].ID != "2026-10-01-002" || logged[0].Count != 2 || len(logged[0].Similar) != 0 {

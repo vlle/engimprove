@@ -3,7 +3,8 @@ models/
 state/
 speaking/
 texts/
-errors/
+errors/*
+!errors/taxonomy.md
 drills/
 .claude/
 CLAUDE.local.md

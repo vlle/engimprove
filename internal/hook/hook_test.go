@@ -19,17 +19,17 @@ func entry(id, before, after string) string {
 func TestPromptQueuesOnlyEnglish(t *testing.T) {
 	st, _ := testutil.Store(t)
 	now := time.Now()
-	path, err := Prompt(st, Input{SessionID: "s1", Cwd: "/x/SCHOOL21", Prompt: "сделай ревью и проверь тесты"}, now)
+	path, err := Prompt(st, Input{SessionID: "s1", Cwd: "/x/project", Prompt: "сделай ревью и проверь тесты"}, now)
 	if err != nil || path != "" {
 		t.Fatalf("russian queued: %q %v", path, err)
 	}
-	path, err = Prompt(st, Input{SessionID: "s1", Cwd: "/x/SCHOOL21",
+	path, err = Prompt(st, Input{SessionID: "s1", Cwd: "/x/project",
 		Prompt: "make hook async so i would not wait `go test ./...`"}, now)
 	if err != nil || path == "" {
 		t.Fatalf("english not queued: %v", err)
 	}
 	var q Queued
-	if err := data.ReadJSON(path, &q); err != nil || strings.Contains(q.Text, "go test") || q.Project != "SCHOOL21" {
+	if err := data.ReadJSON(path, &q); err != nil || strings.Contains(q.Text, "go test") || q.Project != "project" {
 		t.Fatalf("queued = %+v, %v", q, err)
 	}
 	logs, _ := data.ReadJSONL[PromptLog](st.Path("state", "prompts.jsonl"))
