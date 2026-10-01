@@ -24,6 +24,8 @@ func For(language string) Pack {
 	switch strings.ToLower(strings.TrimSpace(language)) {
 	case "russian", "русский":
 		return russian
+	case "spanish", "español", "espanol":
+		return spanish
 	}
 	return english
 }
@@ -54,4 +56,18 @@ var russian = Pack{
 	MoreInDB:      " · ещё %d в базе",
 	StatsUpdated:  "Обновлено: %s · ошибок: %d · текстов: %d",
 	StatsEmpty:    "База пуста. Первый разбор наполнит её.",
+}
+
+var spanish = Pack{
+	CheckFailed:   "⚠ eng: falló la revisión del prompt, está en state/queue/failed — %s",
+	WeekRate:      "📈 eng: semana pasada — %.1f errores por 100 palabras en %d palabras de prompts",
+	WeekPrev:      " (semana anterior: %.1f)",
+	WeekTop:       "; lo más frecuente: %s (%d)",
+	DrillsRipe:    "🎯 eng: drills listos — %s · /eng-drill %s · eng open drill/%s",
+	CardsDue:      "🔁 eng: %d tarjetas para repasar · /eng-drill review",
+	SpeechPending: "🎙 eng: %d grabaciones de voz sin revisar · eng speak review",
+	NthTime:       ", %dª vez",
+	MoreInDB:      " · %d más en la base",
+	StatsUpdated:  "Actualizado: %s · errores: %d · textos: %d",
+	StatsEmpty:    "La base está vacía. La primera revisión la llenará.",
 }
