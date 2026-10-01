@@ -1,0 +1,122 @@
+{
+  "addr": "127.0.0.1:7421",
+  "review_threshold": 5,
+  "notify": true,
+  "whisper_model": "models/ggml-small.en.bin",
+  "claude_model": "sonnet",
+  "openrouter_env": "~/wwrum/scripts/job-radar/fetch-openrouter-env.sh",
+  "openrouter_model": "anthropic/claude-sonnet-5.5",
+  "private_roots": [
+    "~/wwrum"
+  ],
+  "topics": [
+    {
+      "id": "the",
+      "title": "the",
+      "categories": [
+        "articles"
+      ],
+      "tokens": [
+        "the"
+      ],
+      "threshold": 5
+    },
+    {
+      "id": "a-an",
+      "title": "a and an",
+      "categories": [
+        "articles",
+        "plurals-countability"
+      ],
+      "tokens": [
+        "a",
+        "an"
+      ],
+      "threshold": 5
+    },
+    {
+      "id": "prepositions",
+      "title": "prepositions",
+      "categories": [
+        "prepositions",
+        "preposition-collocation"
+      ],
+      "threshold": 4
+    },
+    {
+      "id": "verbs",
+      "title": "verb forms",
+      "categories": [
+        "tense-aspect",
+        "modals",
+        "conditionals",
+        "infinitive-gerund",
+        "passive-voice-form",
+        "subject-verb-agreement",
+        "questions-negation"
+      ],
+      "threshold": 4
+    },
+    {
+      "id": "structure",
+      "title": "sentence structure",
+      "categories": [
+        "coordination",
+        "word-order",
+        "dangling-modifier",
+        "missing-head-noun",
+        "relative-clauses",
+        "pronouns-reference",
+        "comparatives",
+        "plurals-countability"
+      ],
+      "threshold": 4
+    },
+    {
+      "id": "punctuation",
+      "title": "punctuation",
+      "categories": [
+        "commas",
+        "apostrophes",
+        "sentence-boundaries",
+        "hyphenation",
+        "capitalization"
+      ],
+      "threshold": 4
+    },
+    {
+      "id": "lexis",
+      "title": "word choice",
+      "categories": [
+        "word-choice",
+        "collocation",
+        "calque",
+        "false-friend",
+        "phrasal-verbs"
+      ],
+      "threshold": 5
+    },
+    {
+      "id": "style",
+      "title": "style",
+      "categories": [
+        "wordiness",
+        "register",
+        "hedging",
+        "redundancy",
+        "clarity",
+        "paragraphing",
+        "number-format"
+      ],
+      "threshold": 6
+    },
+    {
+      "id": "spelling",
+      "title": "spelling",
+      "categories": [
+        "spelling"
+      ],
+      "threshold": 4
+    }
+  ]
+}

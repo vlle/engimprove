@@ -1,0 +1,13 @@
+bin/
+models/
+state/
+speaking/
+texts/
+errors/
+drills/
+.claude/
+CLAUDE.local.md
+code-style.md
+*.log
+*.pid
+.DS_Store

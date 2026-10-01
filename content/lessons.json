@@ -1,0 +1,287 @@
+{
+  "the": {
+    "summary": "Russian has no articles, so ask one question before every noun: do both of us know which one? If yes, it takes the.",
+    "rules": [
+      {
+        "title": "Both sides know which one",
+        "body": "Something already mentioned, visible, or the only one in the situation takes the. First mention takes a; every later mention takes the.",
+        "examples": [
+          {"bad": "I opened a PR. Can you review PR?", "good": "I opened a PR. Can you review the PR?"},
+          {"bad": "adapt codebase to it", "good": "adapt the codebase to it"},
+          {"bad": "change global CLAUDE.md", "good": "change the global CLAUDE.md"}
+        ]
+      },
+      {
+        "title": "A noun followed by of",
+        "body": "A noun narrowed down by an of-phrase is specific, so it takes the. This is your most frequent the-pattern.",
+        "examples": [
+          {"bad": "principles of peer-to-peer education", "good": "the principles of peer-to-peer education"},
+          {"bad": "working on balance of supply and demand", "good": "working on the balance of supply and demand"}
+        ]
+      },
+      {
+        "title": "The only one: main, overall, same, first, best",
+        "body": "Words that make a noun unique pull in the: the main goal, the overall plan, the same bug, the first release, the best option.",
+        "examples": [
+          {"bad": "Main goal is to improve", "good": "The main goal is to improve"},
+          {"bad": "Overall goal is to ship it", "good": "The overall goal is to ship it"}
+        ]
+      },
+      {
+        "title": "Names that need the",
+        "body": "Country names with a common noun or an abbreviation take the: the UK, the US, the EU, the Netherlands. Languages take no article, but the English language does.",
+        "examples": [
+          {"bad": "job openings in UK", "good": "job openings in the UK"},
+          {"bad": "work on English language", "good": "work on the English language / work on my English"}
+        ]
+      },
+      {
+        "title": "Fixed phrases",
+        "body": "Some phrases are frozen with the: lay the foundation, in the X domain, on the other hand, at the same time, in the end.",
+        "examples": [
+          {"bad": "laid foundation for", "good": "laid the foundation for"},
+          {"bad": "in transportation domain", "good": "in the transportation domain"}
+        ]
+      },
+      {
+        "title": "When not to use the",
+        "body": "Plural and uncountable nouns in a general sense take no article: Engineers like clean code. Experience matters.",
+        "examples": [
+          {"bad": "The engineers like the clean code.", "good": "Engineers like clean code."}
+        ]
+      }
+    ]
+  },
+  "a-an": {
+    "summary": "A singular countable noun can never stand alone. If it is not the, it is a or an.",
+    "rules": [
+      {
+        "title": "Singular countable nouns need an article",
+        "body": "Roles, things and events counted one at a time need a/an: as an engineer, as a volunteer, an opportunity, a frontend and a backend. Russian «работаю инженером» hides it.",
+        "examples": [
+          {"bad": "improve even further as SWE", "good": "improve even further as an engineer"},
+          {"bad": "and opportunity to learn", "good": "and an opportunity to learn"},
+          {"bad": "with frontend, backend", "good": "with a frontend and a backend"}
+        ]
+      },
+      {
+        "title": "a or an goes by sound, not letter",
+        "body": "an before a vowel sound: an English course, an MR (em-ar), an hour, an API. a before a consonant sound: a user (you-ser), a unique id, a URL.",
+        "examples": [
+          {"bad": "a english learning machine", "good": "an English learning machine"},
+          {"bad": "an user", "good": "a user"}
+        ]
+      },
+      {
+        "title": "No a/an with plurals or uncountables",
+        "body": "Plural nouns and uncountable nouns (information, advice, feedback, experience as skill) never take a/an.",
+        "examples": [
+          {"bad": "designing a systems", "good": "designing systems"},
+          {"bad": "I had an experience with big-scale operations", "good": "I have experience with large-scale operations"}
+        ]
+      },
+      {
+        "title": "One of many",
+        "body": "Use a when the thing is one of several of its kind, even if you know which one you mean.",
+        "examples": [
+          {"bad": "Russia's Siberian city", "good": "a Siberian city in Russia"}
+        ]
+      }
+    ]
+  },
+  "prepositions": {
+    "summary": "Prepositions do not translate. Learn each one together with the word that owns it.",
+    "rules": [
+      {
+        "title": "Where you work",
+        "body": "in a team, in the X domain, at a company, on a project, on the backend.",
+        "examples": [
+          {"bad": "working at corporate teams", "good": "working in corporate teams"},
+          {"bad": "working at transportation domain", "good": "working in the transportation domain"}
+        ]
+      },
+      {
+        "title": "Words that own their preposition",
+        "body": "foundation for, depend on, responsible for, interested in, good at, okay at (skills). discuss and explain take no preposition.",
+        "examples": [
+          {"bad": "laid the foundation as to what", "good": "laid the foundation for what"},
+          {"bad": "okay with speaking", "good": "okay at speaking"},
+          {"bad": "discuss about the release", "good": "discuss the release"}
+        ]
+      },
+      {
+        "title": "Time",
+        "body": "on Monday, on 1 October, in October, in 2026, at 5 pm, for two years (duration), since 2021 (start point).",
+        "examples": [
+          {"bad": "in Monday", "good": "on Monday"},
+          {"bad": "I work here since two years", "good": "I have worked here for two years"}
+        ]
+      }
+    ]
+  },
+  "verbs": {
+    "summary": "Pick the time frame first, then the form. would and could belong to the past or the imagined, not to plans.",
+    "rules": [
+      {
+        "title": "Real conditions use will",
+        "body": "if + present, will + verb. would is for imagined situations: if I had time, I would.",
+        "examples": [
+          {"bad": "if I make mistakes you would stack them", "good": "if I make mistakes, you will log them"}
+        ]
+      },
+      {
+        "title": "Purpose after an instruction",
+        "body": "After a present or imperative verb, so that takes present, will or can: extend it so that we work on it.",
+        "examples": [
+          {"bad": "extend the file so we would also work on it", "good": "extend the file so that we also work on it"}
+        ]
+      },
+      {
+        "title": "Present perfect for what is still true",
+        "body": "Experience you still have and situations that started in the past and continue: I have experience with, I have worked here since 2021.",
+        "examples": [
+          {"bad": "I had an experience with Kafka", "good": "I have experience with Kafka"},
+          {"bad": "systems that could handle load", "good": "systems that can handle load"}
+        ]
+      },
+      {
+        "title": "need + to or a noun",
+        "body": "need to do / need a noun. need + -ing is passive: the code needs refactoring = someone must refactor it.",
+        "examples": [
+          {"bad": "if I need speaking", "good": "if I need speaking practice / if I need to practise speaking"}
+        ]
+      }
+    ]
+  },
+  "structure": {
+    "summary": "English wants every part of a sentence to match its partner: lists, pairs and modifiers.",
+    "rules": [
+      {
+        "title": "Lists end with and",
+        "body": "Two items: A and B. Three or more: A, B, and C.",
+        "examples": [
+          {"bad": "with frontend, backend", "good": "with a frontend and a backend"},
+          {"bad": "in system design, maintainable code", "good": "in system design and maintainable code"}
+        ]
+      },
+      {
+        "title": "Parallel pairs",
+        "body": "both A and B, either A or B, and items joined by and share one grammatical form.",
+        "examples": [
+          {"bad": "helping them launch and designing a systems", "good": "helping them launch and design systems"},
+          {"bad": "both grow as Engineer and where I could be useful", "good": "both grow as an engineer and be useful"}
+        ]
+      },
+      {
+        "title": "Noun before noun is singular",
+        "body": "A noun used as a modifier stays singular: mistake count, error rate, user base, a five-year plan.",
+        "examples": [
+          {"bad": "mistakes count", "good": "mistake count"}
+        ]
+      },
+      {
+        "title": "Who is doing the -ing?",
+        "body": "An -ing phrase attaches to the subject of the sentence. If the subject cannot do it, add a real subject.",
+        "examples": [
+          {"bad": "My profile is Golang, working at startup teams", "good": "My background is Go, and I work in startup teams"}
+        ]
+      }
+    ]
+  },
+  "punctuation": {
+    "summary": "Three habits fix most of it: it's vs its, a comma after an opening clause, no comma before that.",
+    "rules": [
+      {
+        "title": "it's or its",
+        "body": "it's = it is / it has. its = belonging to it. Read it aloud as «it is»: if that works, write it's.",
+        "examples": [
+          {"bad": "i think its also okay", "good": "I think it's also okay"},
+          {"bad": "the service lost it's connection", "good": "the service lost its connection"}
+        ]
+      },
+      {
+        "title": "Comma after an opening clause",
+        "body": "When a sentence starts with if, when, whenever, because or after, put a comma where the main clause begins.",
+        "examples": [
+          {"bad": "If I make mistakes you will log them", "good": "If I make mistakes, you will log them"}
+        ]
+      },
+      {
+        "title": "Two full sentences joined by and",
+        "body": "Put a comma before and/but when both sides could stand alone.",
+        "examples": [
+          {"bad": "This took me one month and my work laid the foundation", "good": "This took me one month, and my work laid the foundation"}
+        ]
+      },
+      {
+        "title": "No subjectless sentences in prose",
+        "body": "Chat drops I; letters and cover letters keep it.",
+        "examples": [
+          {"bad": "Love your product", "good": "I love your product"}
+        ]
+      }
+    ]
+  },
+  "lexis": {
+    "summary": "Translate ideas, not words. When a phrase comes to mind in Russian first, check the collocation.",
+    "rules": [
+      {
+        "title": "Calques from Russian",
+        "body": "сильные стороны → strengths; со всех сторон → from every angle; делать исследование → do research; решить проблему → solve a problem.",
+        "examples": [
+          {"bad": "show my strong sides", "good": "show my strengths"},
+          {"bad": "work on English from all sides", "good": "work on my English from every angle"}
+        ]
+      },
+      {
+        "title": "Words that sound right but mean something else",
+        "body": "profile → background (career); shareholders (own shares) vs stakeholders (care about the outcome); cleanliness (hygiene) → clean code; stack (pile up) → log, collect.",
+        "examples": [
+          {"bad": "My profile is Golang", "good": "My background is Go"},
+          {"bad": "you would stack mistakes", "good": "you will log mistakes"}
+        ]
+      },
+      {
+        "title": "Collocations",
+        "body": "large-scale (not big-scale), a growing user base, run exams, prospective students, sound like a fun next step.",
+        "examples": [
+          {"bad": "big-scale operations", "good": "large-scale operations"},
+          {"bad": "increasing user base", "good": "growing user base"}
+        ]
+      }
+    ]
+  },
+  "style": {
+    "summary": "Say it once, plainly, with the same name for the same thing.",
+    "rules": [
+      {
+        "title": "Cut what repeats",
+        "body": "new and incoming, both and at the same time: one word is enough.",
+        "examples": [
+          {"bad": "new incoming requirements", "good": "new requirements"}
+        ]
+      },
+      {
+        "title": "Business email register",
+        "body": "Hello Evelyn, (comma, not !). Sign-off and name on separate lines. Small numbers in words: one month.",
+        "examples": [
+          {"bad": "Hello Evelyn!", "good": "Hello Evelyn,"},
+          {"bad": "This took me 1 month", "good": "This took me one month"}
+        ]
+      }
+    ]
+  },
+  "spelling": {
+    "summary": "Most slips are doubled or dropped letters in long words. Slow down on -ies, -ing and -ment.",
+    "rules": [
+      {
+        "title": "Doubled and dropped letters",
+        "body": "opportunities, working, development, environment, necessary.",
+        "examples": [
+          {"bad": "opportunites", "good": "opportunities"},
+          {"bad": "Wworking", "good": "Working"}
+        ]
+      }
+    ]
+  }
+}
