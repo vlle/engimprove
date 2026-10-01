@@ -56,10 +56,10 @@ func TestStopShowsFeedbackOnceAndNudgesOncePerSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(msg, "✏️ eng (2): `make hook` → `make the hook` (articles, 5-й раз) · `everytime`") {
+	if !strings.Contains(msg, "✏️ eng (2): `make hook` → `make the hook` (articles, 5-th time) · `everytime`") {
 		t.Fatalf("feedback line wrong:\n%s", msg)
 	}
-	if !strings.Contains(msg, "🎯 eng: созрели дриллы — the 2/2") {
+	if !strings.Contains(msg, "🎯 eng: drills ripe — the 2/2") {
 		t.Fatalf("nudge missing:\n%s", msg)
 	}
 	if notice == nil || notice.Route != "drill/the" {

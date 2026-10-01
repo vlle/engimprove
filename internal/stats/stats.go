@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"engimprove/internal/data"
+	"engimprove/internal/i18n"
 )
 
 // GeneratedMarker heads every generated stats file.
@@ -130,8 +131,9 @@ func Render(entries []data.Entry, top int, color bool) string {
 	return b.String()
 }
 
-// Markdown is the content of errors/stats.md.
-func Markdown(entries []data.Entry, top int) string {
+// Markdown is the content of errors/stats.md, headed in the learner's language.
+func Markdown(entries []data.Entry, top int, language string) string {
+	p := i18n.For(language)
 	var b strings.Builder
 	categories := rank(entries, byCategory)
 	rules := rank(entries, byRule)
@@ -139,11 +141,11 @@ func Markdown(entries []data.Entry, top int) string {
 	texts := rank(entries, byText)
 
 	fmt.Fprintf(&b, "%s\n\n# Stats\n\n", GeneratedMarker)
-	fmt.Fprintf(&b, "Обновлено: %s · ошибок: %d · текстов: %d\n\n",
+	fmt.Fprintf(&b, p.StatsUpdated+"\n\n",
 		time.Now().Format("2006-01-02 15:04"), len(entries), len(texts))
 
 	if len(entries) == 0 {
-		b.WriteString("База пуста. Первый разбор наполнит её.\n")
+		b.WriteString(p.StatsEmpty + "\n")
 		return b.String()
 	}
 
@@ -170,6 +172,6 @@ func Markdown(entries []data.Entry, top int) string {
 }
 
 // WriteMarkdown regenerates errors/stats.md with the default top size.
-func WriteMarkdown(s data.Store, entries []data.Entry) error {
-	return data.WriteFile(s.Path("errors", "stats.md"), []byte(Markdown(entries, 10)))
+func WriteMarkdown(s data.Store, entries []data.Entry, language string) error {
+	return data.WriteFile(s.Path("errors", "stats.md"), []byte(Markdown(entries, 10, language)))
 }

@@ -16,6 +16,7 @@ import (
 	"engimprove/internal/coach"
 	"engimprove/internal/config"
 	"engimprove/internal/data"
+	"engimprove/internal/i18n"
 	"engimprove/internal/lang"
 	"engimprove/internal/logbook"
 	"engimprove/internal/speak"
@@ -135,9 +136,10 @@ func Check(ctx context.Context, s data.Store, cfg config.Config, c *coach.Coach,
 		failed := s.Path("state", "queue", "failed", filepath.Base(path))
 		_ = os.MkdirAll(filepath.Dir(failed), 0o755)
 		_ = os.Rename(path, failed)
+		checkFailed := fmt.Sprintf(i18n.For(cfg.Language).CheckFailed, clip(err.Error()))
 		_ = updateFeedback(s, q.Session, func(fb *feedback) {
 			fb.Notes = append(fb.Notes, Note{TS: time.Now().Format(time.RFC3339),
-				Text: "⚠ eng: проверка промпта не удалась, он лежит в state/queue/failed — " + clip(err.Error())})
+				Text: checkFailed})
 		})
 		return 0, backend, err
 	}
@@ -162,6 +164,7 @@ func Check(ctx context.Context, s data.Store, cfg config.Config, c *coach.Coach,
 		logged, _, err := logbook.Log(s, logbook.Input{
 			Date: q.TS[:10], Source: "prompt", Project: q.Project,
 			Original: res.Original, Corrected: res.Corrected, Errors: fresh,
+			Language: cfg.Language,
 		})
 		if err != nil {
 			return 0, backend, err
@@ -216,7 +219,7 @@ func isoWeek(t time.Time) string {
 }
 
 // weeklyLine compares last week's checked prompts with the week before.
-func weeklyLine(s data.Store, entries []data.Entry, now time.Time) string {
+func weeklyLine(s data.Store, entries []data.Entry, now time.Time, p i18n.Pack) string {
 	checks, err := data.ReadJSONL[CheckLog](s.Path("state", "checks.jsonl"))
 	if err != nil {
 		return ""
@@ -234,9 +237,9 @@ func weeklyLine(s data.Store, entries []data.Entry, now time.Time) string {
 		return ""
 	}
 	rate := func(wk string) float64 { return float64(mistakes[wk]) * 100 / float64(words[wk]) }
-	line := fmt.Sprintf("📈 eng: прошлая неделя — %.1f ошибки на 100 слов в %d словах промптов", rate(last), words[last])
+	line := fmt.Sprintf(p.WeekRate, rate(last), words[last])
 	if words[prev] >= 50 {
-		line += fmt.Sprintf(" (неделей раньше %.1f)", rate(prev))
+		line += fmt.Sprintf(p.WeekPrev, rate(prev))
 	}
 	counts := map[string]int{}
 	for _, e := range entries {
@@ -251,13 +254,14 @@ func weeklyLine(s data.Store, entries []data.Entry, now time.Time) string {
 		}
 	}
 	if top != "" {
-		line += fmt.Sprintf("; чаще всего: %s (%d)", top, n)
+		line += fmt.Sprintf(p.WeekTop, top, n)
 	}
 	return line
 }
 
 // Stop builds the system message shown when a turn ends: corrections first, then ripe drills.
 func Stop(s data.Store, cfg config.Config, session string, now time.Time) (string, *Notice, error) {
+	p := i18n.For(cfg.Language)
 	var lines []string
 	if err := updateFeedback(s, session, func(fb *feedback) {
 		var items []FeedbackItem
@@ -268,7 +272,7 @@ func Stop(s data.Store, cfg config.Config, session string, now time.Time) (strin
 			}
 		}
 		if len(items) > 0 {
-			lines = append(lines, formatItems(items))
+			lines = append(lines, formatItems(items, p))
 		}
 		for i := range fb.Notes {
 			if !fb.Notes[i].Shown {
@@ -336,19 +340,19 @@ func Stop(s data.Store, cfg config.Config, session string, now time.Time) (strin
 				announce = append(announce, st.ID)
 			}
 		}
-		if len(ripe) > 0 {
-			id := strings.Fields(ripe[0])[0]
-			lines = append(lines, fmt.Sprintf("🎯 eng: созрели дриллы — %s · /eng-drill %s · eng open drill/%s",
-				strings.Join(ripe, ", "), id, id))
-		}
-		if due >= cfg.ReviewThreshold && first("review") {
-			lines = append(lines, fmt.Sprintf("🔁 eng: %d карточек к повторению · /eng-drill review", due))
-		}
-		if len(pending) > 0 && first("speaking") {
-			lines = append(lines, fmt.Sprintf("🎙 eng: %d записей речи без разбора · eng speak review", len(pending)))
-		}
-		if wk := isoWeek(now); mem.Weekly != wk {
-			if line := weeklyLine(s, entries, now); line != "" {
+	if len(ripe) > 0 {
+		id := strings.Fields(ripe[0])[0]
+		lines = append(lines, fmt.Sprintf(p.DrillsRipe,
+			strings.Join(ripe, ", "), id, id))
+	}
+	if due >= cfg.ReviewThreshold && first("review") {
+		lines = append(lines, fmt.Sprintf(p.CardsDue, due))
+	}
+	if len(pending) > 0 && first("speaking") {
+		lines = append(lines, fmt.Sprintf(p.SpeechPending, len(pending)))
+	}
+	if wk := isoWeek(now); mem.Weekly != wk {
+		if line := weeklyLine(s, entries, now, p); line != "" {
 				lines = append(lines, line)
 				mem.Weekly = wk
 			}
@@ -375,7 +379,7 @@ func Stop(s data.Store, cfg config.Config, session string, now time.Time) (strin
 	return strings.Join(lines, "\n"), notice, err
 }
 
-func formatItems(items []FeedbackItem) string {
+func formatItems(items []FeedbackItem, p i18n.Pack) string {
 	sort.SliceStable(items, func(i, j int) bool {
 		ri, rj := items[i].Count >= 2, items[j].Count >= 2
 		if ri != rj {
@@ -391,13 +395,13 @@ func formatItems(items []FeedbackItem) string {
 	for _, it := range items[:min(len(items), 3)] {
 		tag := it.Category
 		if it.Count >= 2 {
-			tag += fmt.Sprintf(", %d-й раз", it.Count)
+			tag += fmt.Sprintf(p.NthTime, it.Count)
 		}
 		parts = append(parts, fmt.Sprintf("`%s` → `%s` (%s)", it.Before, it.After, tag))
 	}
 	line := fmt.Sprintf("✏️ eng (%d): %s", len(items), strings.Join(parts, " · "))
 	if len(items) > 3 {
-		line += fmt.Sprintf(" · ещё %d в базе", len(items)-3)
+		line += fmt.Sprintf(p.MoreInDB, len(items)-3)
 	}
 	return line
 }

@@ -88,7 +88,7 @@ func run(args []string) error {
 	case "status":
 		return status(st, cfg, args[1:])
 	case "log":
-		return logCmd(st, args[1:])
+		return logCmd(st, cfg, args[1:])
 	case "drill":
 		return drill(st, cfg, args[1:])
 	case "speak":
@@ -415,7 +415,7 @@ func readInput(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func logCmd(st data.Store, args []string) error {
+func logCmd(st data.Store, cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	file := fs.String("f", "", "logbook json file, stdin when empty")
 	asJSON := fs.Bool("json", false, "print json")
@@ -429,6 +429,9 @@ func logCmd(st data.Store, args []string) error {
 	var in logbook.Input
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return fmt.Errorf("input is not a logbook object: %w", err)
+	}
+	if in.Language == "" {
+		in.Language = cfg.Language
 	}
 	logged, textID, err := logbook.Log(st, in)
 	if err != nil {

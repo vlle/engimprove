@@ -73,12 +73,23 @@ func run() error {
 	fmt.Print(stats.Render(entries, opt.top, useColor(opt.noColor)))
 
 	if opt.write {
-		if err := os.WriteFile(opt.out, []byte(stats.Markdown(entries, opt.top)), 0o644); err != nil {
+		if err := os.WriteFile(opt.out, []byte(stats.Markdown(entries, opt.top, readLanguage(filepath.Join(root, "config", "eng.json")))), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", opt.out, err)
 		}
 		fmt.Fprintln(os.Stderr, stamp(), "wrote", opt.out)
 	}
 	return nil
+}
+
+// readLanguage takes the learner's language from the config; English when absent.
+func readLanguage(path string) string {
+	var cfg struct {
+		Language string `json:"language"`
+	}
+	if err := data.ReadJSON(path, &cfg); err != nil || cfg.Language == "" {
+		return "English"
+	}
+	return cfg.Language
 }
 
 // moduleRoot walks up from the cwd so the tool works from any subdirectory.

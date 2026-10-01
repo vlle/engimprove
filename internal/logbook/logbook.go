@@ -26,13 +26,15 @@ type NewError struct {
 
 // Input is a batch of mistakes from one text, prompt or recording.
 type Input struct {
-	TextID    string     `json:"text_id,omitempty"`
-	Date      string     `json:"date,omitempty"`
-	Project   string     `json:"project,omitempty"`
-	Source    string     `json:"source,omitempty"`
-	Original  string     `json:"original,omitempty"`
-	Corrected string     `json:"corrected,omitempty"`
-	Errors    []NewError `json:"errors"`
+	TextID    string `json:"text_id,omitempty"`
+	Date      string `json:"date,omitempty"`
+	Project   string `json:"project,omitempty"`
+	Source    string `json:"source,omitempty"`
+	Original  string `json:"original,omitempty"`
+	Corrected string `json:"corrected,omitempty"`
+	// Language is the learner's language from the config; it heads the regenerated stats.
+	Language string     `json:"language,omitempty"`
+	Errors   []NewError `json:"errors"`
 }
 
 // Logged reports one appended mistake.
@@ -124,7 +126,7 @@ func Log(s data.Store, in Input) ([]Logged, string, error) {
 		if err := data.AppendJSONL(s.Path("errors", "errors.jsonl"), fresh...); err != nil {
 			return err
 		}
-		return stats.WriteMarkdown(s, append(entries, fresh...))
+		return stats.WriteMarkdown(s, append(entries, fresh...), in.Language)
 	})
 	if err != nil {
 		return nil, "", err

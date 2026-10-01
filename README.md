@@ -108,9 +108,12 @@ at the end of the turn. If you use the wrapper, the commands are just `eng hook`
   "topics": [ /* id, categories, threshold, optional tokens */ ]
 ```
 
-Any language works: set `language` to the learner's native language and the LLM
-reviews, explains, and coaches with that language as the reference point —
-the machine itself and its data stay in English.
+Any language works: set `language` to the learner's native language and every user-facing
+surface follows it — the LLM reviews, explains, and coaches with that language as the
+reference point, and the hook feedback lines ("✏️ eng (2): …", "🎯 drills ripe …") and the
+`errors/stats.md` header are rendered in it. Everything else — the mistake database,
+rules, taxonomy, and the CLI — stays in English. English is the fallback; `internal/i18n`
+holds the message packs.
 
 - Prompts from `private_roots` are reviewed by `claude -p` locally instead of OpenRouter.
 - Only the prompt text is queued — no pasted content, code, URLs or paths; the queue file
