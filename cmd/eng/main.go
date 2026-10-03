@@ -24,7 +24,9 @@ import (
 	"engimprove/internal/config"
 	"engimprove/internal/data"
 	"engimprove/internal/hook"
+	"engimprove/internal/install"
 	"engimprove/internal/logbook"
+	"engimprove/internal/resume"
 	"engimprove/internal/server"
 	"engimprove/internal/speak"
 	"engimprove/internal/topics"
@@ -36,6 +38,7 @@ const usage = `eng — English learning machine
   eng serve [-addr 127.0.0.1:7421]        web app + api
   eng open [route]                        start the server if needed and open the browser (route: drill/the, speak, review)
   eng restart                             restart the background server after a rebuild
+  eng install                             scaffold a fresh clone, register Claude Code and opencode hooks
   eng status [-json]                      ripe drills, due reviews, speaking queue
   eng log [-f file.json]                  append mistakes (logbook json on stdin or -f), print repeat counts
   eng drill next [-topic T] [-n 5]        cards as json (topic "review" = due cards)
@@ -48,8 +51,9 @@ const usage = `eng — English learning machine
   eng whisper-setup [-model small.en]     download a whisper.cpp model
   eng check <queue-file>                  check one queued prompt (spawned by the hook, detached)
   eng check -retry                        re-run prompts whose check failed
-  eng hook                                UserPromptSubmit hook, async: queue English prompts
-  eng hook-stop                           Stop hook: show corrections and ripe drills as a system message
+  eng hook [-session S] [-text T]         queue one prompt (flags for agents, stdin payload for Claude Code)
+  eng hook-stop [-session S]              show corrections and ripe drills as a system message
+  eng notify -message M [-route R]        one desktop notification (used by the opencode plugin)
 `
 
 func main() {
@@ -66,9 +70,13 @@ func run(args []string) error {
 	}
 	switch args[0] {
 	case "hook":
-		return runHook()
+		return runHook(args[1:])
 	case "hook-stop":
-		return runStopHook()
+		return runStopHook(args[1:])
+	case "install":
+		return install.Run(os.Stdout)
+	case "notify":
+		return notifyCmd(args[1:])
 	}
 	st, err := data.Open()
 	if err != nil {
@@ -118,12 +126,28 @@ func printJSON(v any) error {
 	return enc.Encode(v)
 }
 
-func hookContext() (data.Store, config.Config, hook.Input, bool) {
+// hookContext builds the hook Input from -session/-cwd/-text flags (other agents)
+// or from the stdin json payload (Claude Code), then opens the store; ok is false
+// when the hook should stay out of the way.
+func hookContext(sub string, args []string) (data.Store, config.Config, hook.Input, bool) {
 	if os.Getenv("ENG_HOOK_OFF") == "1" {
 		return data.Store{}, config.Config{}, hook.Input{}, false
 	}
+	fs := flag.NewFlagSet("eng "+sub, flag.ContinueOnError)
+	session := fs.String("session", "", "session id when passed by an agent, stdin payload otherwise")
+	cwd := fs.String("cwd", "", "working directory, defaults to the current one")
+	text := fs.String("text", "", "prompt text, bypasses the stdin payload")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintln(os.Stderr, "eng hook: bad flags:", err)
+		return data.Store{}, config.Config{}, hook.Input{}, false
+	}
 	var in hook.Input
-	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
+	if *text != "" || *session != "" {
+		if *cwd == "" {
+			*cwd, _ = os.Getwd()
+		}
+		in = hook.Input{SessionID: *session, Cwd: *cwd, Prompt: *text}
+	} else if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
 		fmt.Fprintln(os.Stderr, "eng hook: bad payload:", err)
 		return data.Store{}, config.Config{}, in, false
 	}
@@ -141,8 +165,8 @@ func hookContext() (data.Store, config.Config, hook.Input, bool) {
 }
 
 // runHook queues English prompts and hands them to a detached checker; it never blocks or fails the prompt.
-func runHook() error {
-	st, _, in, ok := hookContext()
+func runHook(args []string) error {
+	st, _, in, ok := hookContext("hook", args)
 	if !ok {
 		return nil
 	}
@@ -161,8 +185,8 @@ func runHook() error {
 }
 
 // runStopHook prints corrections and drill nudges as a system message; it never blocks stopping.
-func runStopHook() error {
-	st, cfg, in, ok := hookContext()
+func runStopHook(args []string) error {
+	st, cfg, in, ok := hookContext("hook-stop", args)
 	if !ok {
 		return nil
 	}
@@ -206,11 +230,20 @@ func spawn(st data.Store, logName string, args ...string) error {
 func doctor(st data.Store, cfg config.Config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	for k, v := range coach.New(cfg).Probe(ctx) {
+	c := coach.New(cfg)
+	for k, v := range c.Probe(ctx) {
 		fmt.Printf("%-11s %s\n", k, v)
 	}
 	tools := speak.Detect(st, cfg.WhisperModel)
-	fmt.Printf("%-11s ready=%v %s\n", "speaking", tools.Ready, tools.Missing)
+	fmt.Printf("%-11s backend=%s local_ready=%v %s\n", "whisper", cfg.WhisperBackend, tools.Ready, tools.Missing)
+	fmt.Printf("%-11s model=%s\n", "whisper", cfg.OpenRouterWhisperModel)
+	if spend, err := speak.TotalSpend(st); err == nil && spend > 0 {
+		fmt.Printf("%-11s $%.4f\n", "speak spend", spend)
+	}
+	if dir := cfg.ResumeDir(); dir != "" {
+		loader := resume.NewLoader(dir)
+		fmt.Printf("%-11s loaded=%v files=%v\n", "resume", loader.Enabled(), loader.Files())
+	}
 	fmt.Printf("%-11s %v\n", "server", alive(cfg))
 	failed, _ := filepath.Glob(st.Path("state", "queue", "failed", "*.json"))
 	fmt.Printf("%-11s %d failed checks (eng check -retry)\n", "queue", len(failed))
@@ -261,13 +294,31 @@ func notify(n *hook.Notice) {
 			return
 		}
 	}
-	self, err := os.Executable()
-	if err != nil {
-		return
+	args := []string{"-title", "engimprove", "-subtitle", "time to practise", "-message", n.Message,
+		"-group", "engimprove"}
+	if n.Route != "" {
+		self, err := os.Executable()
+		if err != nil {
+			return
+		}
+		args = append(args, "-execute", fmt.Sprintf("%q open %s", self, n.Route))
 	}
-	cmd := exec.Command(bin, "-title", "engimprove", "-subtitle", "time to practise", "-message", n.Message,
-		"-group", "engimprove", "-execute", fmt.Sprintf("%q open %s", self, n.Route))
-	_ = cmd.Start()
+	_ = exec.Command(bin, args...).Start()
+}
+
+// notifyCmd shows one desktop notification; the opencode plugin uses it.
+func notifyCmd(args []string) error {
+	fs := flag.NewFlagSet("notify", flag.ContinueOnError)
+	message := fs.String("message", "", "notification text")
+	route := fs.String("route", "", "route for the click action, eg drill/the")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *message == "" {
+		return errors.New("usage: eng notify -message <text>")
+	}
+	notify(&hook.Notice{Message: *message, Route: *route})
+	return nil
 }
 
 func serve(st data.Store, cfg config.Config, args []string) error {
@@ -277,8 +328,14 @@ func serve(st data.Store, cfg config.Config, args []string) error {
 		return err
 	}
 	cfg.Addr = *addr
-	srv := &server.Server{Store: st, Config: cfg, Coach: coach.New(cfg), Static: web.Static(),
-		Log: log.New(os.Stderr, "", log.LstdFlags)}
+	srv := &server.Server{
+		Store:  st,
+		Config: cfg,
+		Coach:  coach.New(cfg),
+		Resume: resume.NewLoader(cfg.ResumeDir()),
+		Static: web.Static(),
+		Log:    log.New(os.Stderr, "", log.LstdFlags),
+	}
 	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -553,9 +610,10 @@ func speakCmd(st data.Store, cfg config.Config, args []string) error {
 			return nil
 		}
 		c := coach.New(cfg)
+		resumeCtx := resume.NewLoader(cfg.ResumeDir()).Context()
 		for _, rec := range pending {
 			progress("reviewing %s (%d words)", rec.ID, rec.Words)
-			review, backend, err := c.ReviewSpeech(context.Background(), st, rec.Prompt, rec.Transcript)
+			review, backend, err := c.ReviewSpeech(context.Background(), st, rec.Prompt, rec.Transcript, resumeCtx)
 			if err != nil {
 				return err
 			}
