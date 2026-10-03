@@ -4,7 +4,7 @@ const view = document.getElementById("view");
 const toastEl = document.getElementById("toast");
 let keyHandler = null;
 let cleanup = null;
-const cache = { mistakes: null, lessons: null, status: null };
+const cache = { mistakes: null, lessons: null, workEnglish: null, status: null };
 
 document.addEventListener("keydown", (e) => {
   if (!keyHandler || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -148,8 +148,17 @@ async function getLessons() {
   if (!cache.lessons) cache.lessons = await api("/api/lessons");
   return cache.lessons;
 }
+async function getWorkEnglish() {
+  if (!cache.workEnglish) cache.workEnglish = await api("/api/work-english");
+  return cache.workEnglish;
+}
 async function getStatus() {
   cache.status = await api("/api/status");
+  const v = cache.status?.version;
+  if (v) {
+    const el = document.getElementById("version");
+    if (el) el.textContent = [v.commit, v.time, v.dirty ? "dirty" : ""].filter(Boolean).join(" · ");
+  }
   return cache.status;
 }
 const topicTitle = (id) => cache.status?.topics.find((t) => t.id === id)?.title || id;
@@ -175,14 +184,19 @@ async function today() {
   const ready = st.topics.filter((t) => t.ready);
   const heroTopic = hero?.entry.topics[0];
 
+  const heroActions = hero
+    ? `<div class="actions">
+            <a class="button primary" href="#/drill/${esc(heroTopic)}">Practise ${esc(topicTitle(heroTopic))}</a>
+            ${st.due ? `<a class="button" href="#/review">Review ${st.due} due</a>` : ""}
+            <button class="button" data-cheer>Cheer me up</button>
+          </div>`
+    : `<div class="actions"><button class="button" data-cheer>Cheer me up</button></div>`;
+
   const heroHTML = hero
     ? `<section class="leaf">
         <div class="text">
           <p class="sentence hero">${renderDiff(hero.entry.before, hero.entry.after, true)}</p>
-          <div class="actions">
-            <a class="button primary" href="#/drill/${esc(heroTopic)}">Practise ${esc(topicTitle(heroTopic))}</a>
-            ${st.due ? `<a class="button" href="#/review">Review ${st.due} due</a>` : ""}
-          </div>
+          ${heroActions}
         </div>
         <aside class="note">
           <strong>${esc(hero.rule.rule)}</strong>
@@ -253,9 +267,111 @@ async function today() {
         .join("")}</ul>
     </section>`;
 
+  view.querySelector("[data-cheer]")?.addEventListener("click", (e) => growthCard(e.currentTarget));
+
   keyHandler = (e) => {
     if (e.key === "Enter" && heroTopic && document.activeElement === view) location.hash = `#/drill/${heroTopic}`;
   };
+}
+
+/* ---------- explanation modules: the fuller answer under a card ---------- */
+
+const SPEAKER = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h2.5L8 3v10L4.5 10H2z" fill="currentColor"/><path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.3 3.7a6 6 0 0 1 0 8.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+
+function focusHTML(sentence, focus) {
+  const k = focus ? sentence.toLowerCase().indexOf(focus.toLowerCase()) : -1;
+  if (k < 0) return esc(sentence);
+  const end = k + focus.length;
+  return `${esc(sentence.slice(0, k))}<mark class="focus">${esc(sentence.slice(k, end))}</mark>${esc(sentence.slice(end))}`;
+}
+
+// both sides of a minimal pair, each with its own differing words marked.
+function pairHTML(a, b) {
+  const parts = diffWords(a, b);
+  const side = (own) =>
+    parts
+      .filter((p) => p.t === "eq" || p.t === "punct" || p.t === own)
+      .map((p) => (p.t === own ? `<mark class="focus">${esc(p.w)}</mark>` : esc(own === "del" && p.was ? p.was : p.w)))
+      .join(" ");
+  return [side("del"), side("ins")];
+}
+
+const gapHTML = (text) => text.split("___").map(esc).join(`<span class="slot" data-slot>&nbsp;</span>`);
+
+function explanationHTML(e, history, c, given) {
+  const cloze = c.type !== "fix";
+  const mods = [];
+  const add = (kind, label, body, wide = false) => body && mods.push({ kind, label, body, wide });
+
+  add("verdict", "In short", `<p>${esc(e.verdict)}</p>`, true);
+  add("contrast", "Yours vs. correct", e.contrast.yours && `<div class="contrast">
+      <div class="side yours"><span class="tag">${cloze ? `<del class="slip">${esc(given)}</del>` : "Your version"}</span><p>${esc(e.contrast.yours)}</p></div>
+      <span class="vs" aria-hidden="true">→</span>
+      <div class="side correct"><span class="tag">${cloze ? `<ins class="fix">${esc(c.answers.join(" | "))}</ins>` : "The fix"}</span><p>${esc(e.contrast.correct)}</p></div>
+    </div>`, true);
+  add("steps", "How to decide", e.steps.length && `<ol class="steps">${e.steps
+    .map((s) => `<li><span class="q">${esc(s.question)}</span><span class="a">${esc(s.answer)}</span></li>`)
+    .join("")}</ol>`);
+  add("examples", "More examples", e.examples.length && `<ul class="examples">${e.examples
+    .map((x) => `<li><button class="hear" data-hear="${esc(x.sentence)}" aria-label="Hear: ${esc(x.sentence)}">${SPEAKER}</button>
+        <div><p class="ex">${focusHTML(x.sentence, x.focus)}</p>${x.note ? `<p class="gloss">${esc(x.note)}</p>` : ""}</div></li>`)
+    .join("")}</ul>`, true);
+  add("pairs", "Minimal pairs", e.pairs.length && e.pairs
+    .map((p) => {
+      const [a, b] = pairHTML(p.a, p.b);
+      return `<div class="pair"><p class="ex"><span class="lt">A</span><span>${a}</span></p><p class="ex"><span class="lt">B</span><span>${b}</span></p><p class="gloss">${esc(p.difference)}</p></div>`;
+    })
+    .join(""));
+  add("thumb", "Rule of thumb", e.mnemonic && `<p>${esc(e.mnemonic)}</p>`);
+  add("native", "Why it slips", e.native && `<p>${esc(e.native)}</p>`);
+  add("traps", "Watch out", e.traps.length && `<ul class="traps">${e.traps
+    .map((t) => `<li><span class="trap-mark" aria-hidden="true">≠</span><div><p class="ex">${esc(t.trap)}</p><p class="gloss">${esc(t.why)}</p></div></li>`)
+    .join("")}</ul>`);
+  add("quiz", `Quick check <span class="count" data-score>0 of ${e.quiz.length}</span>`, e.quiz.length && `<ol class="quiz">${e.quiz
+    .map((q, k) => `<li data-quiz="${k}"><p class="ex">${gapHTML(q.text)}</p>
+        <div class="opts">${q.choices.map((ch) => `<button data-pick="${esc(ch)}">${esc(ch)}</button>`).join("")}</div>
+        <p class="gloss why" hidden>${esc(q.why)}</p></li>`)
+    .join("")}</ol>`, true);
+  add("history", `From your writing <span class="count">×${history.count}</span>`, history.count > 1 && history.slips.length &&
+    `<ul class="history">${history.slips.map((s) => `<li><time datetime="${esc(s.date)}">${dayOf(s.date)}</time><p class="ex">${renderDiff(s.before, s.after)}</p></li>`).join("")}</ul>`);
+
+  return `<div class="mods">${mods
+    .map((m, i) => `<section class="mod mod-${m.kind}${m.wide ? " wide" : ""}" style="--i:${i}"><h3 class="mod-label">${m.label}</h3>${m.body}</section>`)
+    .join("")}</div>`;
+}
+
+const explanationSkeleton = () => `<div class="mods" aria-busy="true">
+    <div class="mod skel wide"><i></i><i></i><i></i></div>
+    <div class="mod skel"><i></i><i></i><i></i><i></i></div>
+    <div class="mod skel"><i></i><i></i><i></i></div>
+    <div class="mod skel wide"><i></i><i></i><i></i><i></i></div>
+  </div>
+  <p class="muted wait">Writing a fuller explanation with examples… <span data-elapsed>0 s</span></p>`;
+
+function wireExplanation(root, quiz) {
+  root.querySelectorAll("[data-hear]").forEach((b) => b.addEventListener("click", () => say(b.dataset.hear)));
+  let right = 0;
+  root.querySelectorAll("[data-quiz]").forEach((li) => {
+    const q = quiz[Number(li.dataset.quiz)];
+    li.querySelectorAll("[data-pick]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const ok = b.dataset.pick === q.answer;
+        const shown = (w) => (w === NONE ? `<span class="zero" title="no word here">‸</span>` : esc(w));
+        const slot = li.querySelector("[data-slot]");
+        slot.classList.add("filled");
+        slot.innerHTML = (ok ? "" : `<del class="slip">${shown(b.dataset.pick)}</del> `) + `<ins class="fix write">${shown(q.answer)}</ins>`;
+        li.querySelectorAll("[data-pick]").forEach((o) => {
+          o.disabled = true;
+          o.classList.add(o.dataset.pick === q.answer ? "right" : o === b ? "wrong" : "dim");
+        });
+        const why = li.querySelector(".why");
+        why.hidden = false;
+        why.classList.add(ok ? "ok" : "miss");
+        right += ok;
+        root.querySelector("[data-score]").textContent = `${right} of ${quiz.length}`;
+      })
+    );
+  });
 }
 
 /* ---------- drill player ---------- */
@@ -356,7 +472,7 @@ async function drill(topic) {
       ${c.source === "mistake" && c.date ? `<p>From your writing on ${dayOf(c.date)}.</p>` : c.source === "pack" ? "<p>A new sentence written from your mistakes.</p>" : ""}
       <p><button class="link" data-say>Hear it</button></p>`;
 
-  function frame(inner, note) {
+  function frame(inner, note, below = "") {
     view.innerHTML = `<section class="leaf">
       <div class="text">
         <h1>${esc(title)}</h1>
@@ -364,6 +480,7 @@ async function drill(topic) {
         ${inner}
       </div>
       <aside class="note" id="note">${note}</aside>
+      ${below}
     </section>`;
   }
 
@@ -395,26 +512,37 @@ async function drill(topic) {
             : `<button class="primary" data-next>Next card <kbd>↵</kbd></button>`}
           <button class="link" data-explain>Explain this more</button>
         </div>`,
-       `${answerNote(c)}<div id="explanation" aria-live="polite"></div>`
+       answerNote(c),
+       `<div class="explain" id="explanation" aria-live="polite"></div>`
      );
     const full = c.after || (c.type === "fix" ? c.answers[0] : "");
     view.querySelector("[data-say]")?.addEventListener("click", () => say(full || c.text.replaceAll("___", c.answers[0])));
     view.querySelector("[data-next]")?.addEventListener("click", next);
+    let previous = null;
     view.querySelector("[data-explain]").addEventListener("click", async (e) => {
       const button = e.currentTarget;
       const output = view.querySelector("#explanation");
       button.disabled = true;
       button.textContent = "Explaining…";
-      output.innerHTML = `<p class="muted">Preparing an explanation with the full card context…</p>`;
+      output.innerHTML = explanationSkeleton();
+      output.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
+      const started = Date.now();
+      const clock = setInterval(() => {
+        const el = output.querySelector("[data-elapsed]");
+        if (el) el.textContent = `${Math.round((Date.now() - started) / 1000)} s`;
+      }, 1000);
       try {
-        const result = await api("/api/explain", { method: "POST", json: { card: c.id, given } });
-        output.innerHTML = `<p class="prose">${esc(result.explanation)}</p>`;
-        button.disabled = false;
-        button.textContent = "Explain this another way";
+        const result = await api("/api/explain", { method: "POST", json: { card: c.id, given, previous } });
+        previous = result.explanation;
+        output.innerHTML = explanationHTML(result.explanation, result.history, c, given);
+        wireExplanation(output, result.explanation.quiz);
+        button.textContent = "Explain it another way";
       } catch (err) {
         output.innerHTML = `<p class="error">${esc(err.message)}</p>`;
-        button.disabled = false;
         button.textContent = "Try the explanation again";
+      } finally {
+        clearInterval(clock);
+        button.disabled = false;
       }
     });
     view.querySelectorAll("[data-grade]").forEach((b) =>
@@ -556,6 +684,13 @@ function pickMime() {
   return { mime: "", ext: ".webm" };
 }
 
+function costBadge(rec) {
+  const parts = [];
+  if (rec.whisper_cost > 0) parts.push(`transcription $${rec.whisper_cost.toFixed(4)}`);
+  if (rec.review_cost > 0) parts.push(`review $${rec.review_cost.toFixed(4)}`);
+  return parts.length ? `<span class="cost">${parts.join(" · ")}</span>` : "";
+}
+
 function reviewHTML(rec) {
   const r = rec.review;
   if (!r) return "";
@@ -567,34 +702,70 @@ function reviewHTML(rec) {
     <div class="actions"><button data-hear="${esc(r.corrected)}">Hear the corrected version</button></div>
     ${errs ? `<h3 style="margin-top:2rem">What to fix</h3><ul class="plain">${errs}</ul>` : `<p class="verdict ok">No grammar mistakes found.</p>`}
     ${r.tips?.length ? `<h3 style="margin-top:2rem">Tips</h3><ul class="plain">${r.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-    ${r.fluency ? `<p class="prose muted">${esc(r.fluency)}</p>` : ""}`;
+    ${r.fluency ? `<p class="prose muted">${esc(r.fluency)}</p>` : ""}
+    ${costBadge(rec)}`;
+}
+
+function starBar(score) {
+  return `<span class="stars" aria-label="${score} out of 5">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= score ? "on" : ""}"></i>`).join("")}</span>`;
+}
+
+function interviewReviewHTML(rec) {
+  const r = rec.interview_review;
+  if (!r) return "";
+  const dims = ["situation", "task", "action", "result"];
+  const rows = dims
+    .map((d) => {
+      const s = r.star[d];
+      return `<tr><td>${esc(d[0].toUpperCase() + d.slice(1))}</td><td>${starBar(s.score)}</td><td>${esc(s.feedback)}</td></tr>`;
+    })
+    .join("");
+  return `<h3 style="margin-top:2rem">STAR review</h3>
+    <table class="star-table"><tbody>${rows}</tbody></table>
+    <p><strong>Overall:</strong> ${starBar(r.overall_score)}</p>
+    ${r.rewrite ? `<h3 style="margin-top:2rem">Tighter version</h3><p class="sentence small">${esc(r.rewrite)}</p>` : ""}
+    ${r.story_match ? `<p class="prose muted">Best story match: ${esc(r.story_match)}</p>` : ""}
+    ${r.strengths?.length ? `<h3 style="margin-top:2rem">Strengths</h3><ul class="plain">${r.strengths.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${r.gaps?.length ? `<h3 style="margin-top:2rem">Gaps</h3><ul class="plain">${r.gaps.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${r.follow_ups?.length ? `<h3 style="margin-top:2rem">Likely follow-ups</h3><ul class="plain">${r.follow_ups.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${costBadge(rec)}`;
 }
 
 function wireHear(root) {
   root.querySelectorAll("[data-hear]").forEach((b) => b.addEventListener("click", () => say(b.dataset.hear)));
 }
 
-async function speakView() {
-  const [st, q, history] = await Promise.all([getStatus(), api("/api/speak/question"), api("/api/speak")]);
+async function speakView(modeHint = "grammar", promptHint = "") {
+  const qReq = promptHint ? Promise.resolve({ prompt: promptHint, focus: "" }) : api("/api/speak/question");
+  const [st, q, history] = await Promise.all([getStatus(), qReq, api("/api/speak")]);
   const tools = st.speaking.tools;
+  const whisperOk = st.whisper?.openrouter_ok || st.whisper?.local_ready;
   let recorder = null, chunks = [], started = 0, tick = null, stream = null;
+  let reviewMode = modeHint;
+
+  const backendNote = `<p class="muted backend">Transcription: ${esc(st.whisper?.backend || "local")} · ${esc(st.whisper?.model || "whisper.cpp")}${st.speaking.spend ? ` · spend $${st.speaking.spend.toFixed(4)}` : ""}</p>`;
 
   const hist = history
     .map(
       (r) => `<li><details><summary><span class="muted">${when(r.ts)}</span> ${esc(r.prompt)}
-        <span class="muted">— ${r.words} words, ${r.review ? `${(r.review.errors || []).length} to fix` : "not checked yet"}</span></summary>
-        <p class="sentence small">${esc(r.transcript)}</p>${reviewHTML(r)}</details></li>`
+        <span class="muted">— ${r.words} words, ${r.review ? `${(r.review.errors || []).length} to fix` : r.interview_review ? "STAR review" : "not checked yet"}</span></summary>
+        <p class="sentence small">${esc(r.transcript)}</p>${r.interview_review ? interviewReviewHTML(r) : reviewHTML(r)}</details></li>`
     )
     .join("");
 
   view.innerHTML = `<section class="leaf">
       <div class="text">
         <p class="sentence medium">${esc(q.prompt)}</p>
-        ${tools.ready ? "" : `<div class="callout">Recording works once these are in place: ${esc(tools.missing)}.<br>Run <code>eng whisper-setup</code> in a terminal, then reload.</div>`}
+        ${whisperOk ? "" : `<div class="callout">Recording works once these are in place: ${esc(tools.missing || "OpenRouter key or local whisper-cpp")}.<br>Run <code>eng doctor</code> in a terminal, then reload.</div>`}
         ${st.llm.ok ? "" : `<div class="callout">The grammar check needs OpenRouter or the claude CLI; <code>eng doctor</code> shows which one is missing.</div>`}
+        ${backendNote}
         <div class="actions">
-          <button class="record primary" id="rec" ${tools.ready ? "" : "disabled"}><span class="dot"></span><span id="rec-label">Record</span> <kbd>space</kbd></button>
+          <button class="record primary" id="rec" ${whisperOk ? "" : "disabled"}><span class="dot"></span><span id="rec-label">Record</span> <kbd>space</kbd></button>
           <span class="timer" id="timer"></span>
+          <select id="mode" aria-label="Review mode">
+            <option value="grammar" ${reviewMode === "grammar" ? "selected" : ""}>Check grammar</option>
+            <option value="star" ${reviewMode === "star" ? "selected" : ""}>Check as interview answer (STAR)</option>
+          </select>
           <button class="link" id="another">Another question</button>
         </div>
         <div id="out"></div>
@@ -610,6 +781,8 @@ async function speakView() {
   const recBtn = view.querySelector("#rec");
   const label = view.querySelector("#rec-label");
   const timer = view.querySelector("#timer");
+  const modeSelect = view.querySelector("#mode");
+  modeSelect.addEventListener("change", () => { reviewMode = modeSelect.value; });
   view.querySelector("#another").addEventListener("click", () => route());
 
   async function start() {
@@ -654,23 +827,24 @@ async function speakView() {
     recBtn.disabled = true;
     try {
       const rec = await api("/api/speak", { method: "POST", body: form });
+      const canCheck = rec.transcript && st.llm.ok;
       out.innerHTML = `<h3 style="margin-top:2rem">What Whisper heard</h3>
         <p class="sentence small">${esc(rec.transcript) || "<span class='muted'>Nothing was recognised.</span>"}</p>
-        <div class="actions"><button class="primary" id="check" ${rec.transcript && st.llm.ok ? "" : "disabled"}>Check my grammar</button>
-        <span class="muted">${rec.words} words</span></div><div id="review"></div>`;
+        <div class="actions"><button class="primary" id="check" ${canCheck ? "" : "disabled"}>${reviewMode === "star" ? "Check as STAR answer" : "Check my grammar"}</button>
+        <span class="muted">${rec.words} words · ${esc(rec.whisper_backend)}</span></div><div id="review"></div>`;
       const check = out.querySelector("#check");
       check.addEventListener("click", async () => {
         check.disabled = true;
         check.textContent = "Checking, about 15 seconds…";
         try {
-          const done = await api(`/api/speak/${encodeURIComponent(rec.id)}/review`, { method: "POST" });
-          out.querySelector("#review").innerHTML = reviewHTML(done);
+          const done = await api(`/api/speak/${encodeURIComponent(rec.id)}/review?mode=${reviewMode}`, { method: "POST" });
+          out.querySelector("#review").innerHTML = reviewMode === "star" ? interviewReviewHTML(done) : reviewHTML(done);
           wireHear(out);
           check.textContent = "Checked";
           cache.mistakes = null;
         } catch (e) {
           check.disabled = false;
-          check.textContent = "Check my grammar";
+          check.textContent = reviewMode === "star" ? "Check as STAR answer" : "Check my grammar";
           toast(`Check failed: ${e.message}`);
         }
       });
@@ -684,7 +858,7 @@ async function speakView() {
 
   recBtn.addEventListener("click", () => (recorder?.state === "recording" ? stop() : start()));
   keyHandler = (e) => {
-    if (e.code === "Space" && !["TEXTAREA", "INPUT", "BUTTON", "SUMMARY"].includes(document.activeElement?.tagName) && tools.ready) {
+    if (e.code === "Space" && !["TEXTAREA", "INPUT", "BUTTON", "SUMMARY", "SELECT"].includes(document.activeElement?.tagName) && whisperOk) {
       e.preventDefault();
       recorder?.state === "recording" ? stop() : start();
     }
@@ -697,6 +871,269 @@ async function speakView() {
     stream?.getTracks().forEach((t) => t.stop());
     clearInterval(tick);
   };
+}
+
+/* ---------- work english ---------- */
+
+async function workView(topic) {
+  const [data, st] = await Promise.all([getWorkEnglish(), cache.status ? Promise.resolve(cache.status) : getStatus()]);
+  const cats = data.categories || [];
+  let active = cats.find((c) => c.id === topic) || cats[0];
+
+  const nav = `<nav class="lesson-nav" aria-label="Work English topics">${cats
+    .map((c) => `<a href="#/work/${esc(c.id)}" ${c.id === active?.id ? 'aria-current="page"' : ""}>${esc(c.title)}</a>`)
+    .join("")}</nav>`;
+
+  const categoryHTML = (c) => `
+    <section class="leaf">
+      <div class="text">
+        <h1>${esc(c.title)}</h1>
+        ${c.phrases?.length ? `<h2>Useful phrases</h2><ul class="plain phrases">${c.phrases.map((p) => `<li><p>${esc(p.text)}</p>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ""}</p></li>`).join("")}</ul>` : ""}
+        ${c.prompts?.length ? `<h2>Practice prompts</h2><ul class="plain prompts">${c.prompts.map((p) => `<li><p>${esc(p)}</p><a class="button" href="#/speak?mode=${c.id === "interview" ? "star" : "grammar"}&prompt=${encodeURIComponent(p)}">Record an answer</a></li>`).join("")}</ul>` : ""}
+      </div>
+      <aside class="note"><strong>${esc(c.title)}</strong><p>Pick a prompt, record your answer, and choose grammar or STAR feedback.</p></aside>
+    </section>`;
+
+  view.innerHTML = `${nav}${active ? categoryHTML(active) : `<p class="muted">No Work English content yet.</p>`}`;
+}
+
+/* ---------- check a pasted text ---------- */
+
+const KIND_LABEL = { grammar: "grammar", punctuation: "punct", lexical: "word choice", spelling: "spelling", style: "style" };
+
+async function checkView() {
+  const st = cache.status ? cache.status : await getStatus();
+  view.innerHTML = `<section class="leaf">
+      <div class="text">
+        <h1>Check a text before you send it</h1>
+        <p class="prose muted">Paste an email, an MR description or a message. The LLM marks what to fix; what you confirm joins the mistake pile and comes back as drills.</p>
+        <textarea id="paste" rows="8" placeholder="Paste your English here…" spellcheck="false"></textarea>
+        <div class="actions">
+          <button class="primary" id="run" disabled>Check <kbd>↵</kbd></button>
+          <button class="link" id="clear" hidden>Clear</button>
+          <span class="muted" id="meta"></span>
+        </div>
+        <div id="out"></div>
+      </div>
+      <aside class="note"><strong>Nothing is logged until you say so.</strong>
+        <p>Style notes are only advice — they never enter the database.</p>
+        ${st.llm.ok ? "" : `<p class="callout">No LLM backend: run <code>eng doctor</code>.</p>`}</aside>
+    </section>`;
+  const ta = view.querySelector("#paste");
+  const run = view.querySelector("#run");
+  const clearBtn = view.querySelector("#clear");
+  const out = view.querySelector("#out");
+  const meta = view.querySelector("#meta");
+  let draft = null;
+  const explainers = new Map();
+
+  ta.addEventListener("input", () => {
+    const nWords = words(ta.value).length;
+    run.disabled = !ta.value.trim();
+    meta.textContent = ta.value.trim() ? `${nWords} words` : "";
+  });
+  clearBtn.addEventListener("click", () => {
+    ta.value = "";
+    run.disabled = true;
+    clearBtn.hidden = true;
+    out.innerHTML = "";
+    meta.textContent = "";
+    draft = null;
+    explainers.clear();
+    ta.focus();
+  });
+
+  const mistakeRow = (e, count, k) => `<li>
+      <p class="sentence small">${renderDiff(e.before, e.after)}</p>
+      <div class="note"><strong>${esc(e.rule)}</strong>
+        <p><span class="tag kind">${esc(KIND_LABEL[e.category] || e.category)}</span>${count ? ` <span class="muted">×${count}</span>` : ""}${e.note ? ` — ${esc(e.note)}` : ""}</p>
+        <p><button class="link" data-explain-mistake="${k}">Explain this more</button></p>
+      </div>
+      <div class="explain" data-explanation="${k}" aria-live="polite"></div>
+    </li>`;
+
+  function wireExplainers() {
+    view.querySelectorAll("[data-explain-mistake]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const k = Number(b.dataset.explainMistake);
+        const e = draft.errors[k];
+        const out2 = view.querySelector(`[data-explanation="${k}"]`);
+        const prev = explainers.get(k);
+        b.disabled = true;
+        b.textContent = "Explaining…";
+        out2.innerHTML = explanationSkeleton();
+        out2.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
+        try {
+          const res = await api("/api/check/explain", {
+            method: "POST",
+            json: { category: e.category, rule: e.rule, before: e.before, after: e.after, note: e.note, previous: prev || null },
+          });
+          explainers.set(k, res.explanation);
+          const fake = { type: "fix", answers: [e.after], rule: e.rule, note: e.note };
+          out2.innerHTML = explanationHTML(res.explanation, res.history, fake, e.before);
+          wireExplanation(out2, res.explanation.quiz);
+          wireHear(out2);
+          b.textContent = "Explain it another way";
+        } catch (err) {
+          out2.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+          b.textContent = "Try the explanation again";
+        } finally {
+          b.disabled = false;
+        }
+      })
+    );
+  }
+
+  async function check() {
+    const text = ta.value.trim();
+    if (!text) return;
+    run.disabled = true;
+    run.textContent = "Checking…";
+    out.innerHTML = `<p class="muted wait">Reading your text… <span data-elapsed>0 s</span></p>`;
+    clearBtn.hidden = false;
+    const started = Date.now();
+    const clock = setInterval(() => {
+      const el = out.querySelector("[data-elapsed]");
+      if (el) el.textContent = `${Math.round((Date.now() - started) / 1000)} s`;
+    }, 1000);
+    try {
+      draft = await api("/api/check", { method: "POST", json: { text } });
+      renderResult();
+    } catch (e) {
+      out.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+    } finally {
+      clearInterval(clock);
+      run.disabled = false;
+      run.textContent = "Check again";
+    }
+  }
+
+  function renderResult() {
+    if (!draft) return;
+    draft.errors = draft.errors || [];
+    const fixable = draft.errors.map((e, k) => ({ e, k })).filter(({ e }) => e.category !== "style");
+    const style = draft.errors.map((e, k) => ({ e, k })).filter(({ e }) => e.category === "style");
+    const counted = draft.counted || {};
+    out.innerHTML = `
+      <h3 style="margin-top:2rem">Corrected</h3>
+      <p class="sentence small">${draft.corrected === draft.original ? esc(draft.corrected) : renderDiff(draft.original, draft.corrected, true)}</p>
+      <div class="actions">
+        <button data-hear="${esc(draft.corrected)}">Hear it</button>
+        ${draft.cost ? `<span class="cost">$${draft.cost.toFixed(4)}</span>` : ""}
+      </div>
+      ${fixable.length
+        ? `<h3 style="margin-top:2rem">What to fix <span class="muted">(${fixable.length})</span></h3><ul class="plain">${fixable.map(({ e, k }) => mistakeRow(e, counted[e.rule], k)).join("")}</ul>
+           <div class="actions"><button class="primary" id="log">Add ${fixable.length} to the mistake pile</button></div>`
+        : `<p class="verdict ok">No grammar mistakes found.</p>`}
+      ${style.length
+        ? `<h3 style="margin-top:2rem">Style notes <span class="muted">(advice, not logged)</span></h3><ul class="plain">${style.map(({ e, k }) => mistakeRow(e, 0, k)).join("")}</ul>` : ""}`;
+    wireHear(out);
+    wireExplainers();
+    const logBtn = out.querySelector("#log");
+    logBtn?.addEventListener("click", async () => {
+      logBtn.disabled = true;
+      logBtn.textContent = "Writing…";
+      try {
+      const res = await api(`/api/check/${encodeURIComponent(draft.id)}/log`, { method: "POST" });
+      toast(`${res.logged} mistakes logged. The mistakes view and drills now know about them.`);
+      logBtn.textContent = `Logged ${res.logged}`;
+        cache.mistakes = null;
+        cache.status = null;
+      } catch (e) {
+        logBtn.disabled = false;
+        logBtn.textContent = "Add to the mistake pile";
+        toast(`Not logged: ${e.message}`);
+      }
+    });
+  }
+
+  run.addEventListener("click", check);
+  keyHandler = (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      check();
+    }
+  };
+}
+
+/* ---------- growth card ---------- */
+
+const pct = (v) => `${Math.round(v * 100)}%`;
+
+function deltaHTML(now, prev) {
+  if (!prev || !now) return "";
+  const drop = Math.round(((prev - now) / prev) * 100);
+  if (drop > 0) return `<span class="delta down">−${drop}%</span>`;
+  if (drop < 0) return `<span class="delta up">+${-drop}%</span>`;
+  return `<span class="delta">±0%</span>`;
+}
+
+async function growthCard(anchor) {
+  anchor.disabled = true;
+  anchor.textContent = "Collecting your numbers…";
+  let section;
+  try {
+    const st = await api("/api/growth");
+    section = document.createElement("section");
+    section.className = "section leaf growth";
+    section.innerHTML = `
+      <div class="text">
+        <h2>Are you actually getting better?</h2>
+        <div class="figures" aria-busy="true"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+      </div>`;
+    anchor.closest("section").after(section);
+    const cheerPromise = st.llm_ok === false ? Promise.resolve(null) : api("/api/growth/cheer", { method: "POST" }).catch(() => null);    const months = (st.months || []).slice(-6);
+    const maxRate = Math.max(1, ...months.map((m) => m.rate));
+    const bars = months
+      .map((m, i) => {
+        const h = Math.max(2, (m.rate / maxRate) * 70);
+        return `<rect class="${m.month === months[months.length - 1].month ? "bar-now" : "bar-rate"}" x="${i * 40 + 8}" y="${84 - h}" width="24" height="${h}" rx="3"><title>${m.month}: ${m.rate.toFixed(1)} per 100 words over ${m.words} words</title></rect>
+          <text x="${i * 40 + 20}" y="100" text-anchor="middle">${m.month.slice(5)}</text>`;
+      })
+      .join("");
+    const w = st.week_rate, pw = st.prev_week_rate;
+    const figures = `
+      <div><b>${st.streak}</b>${st.streak === 1 ? "day streak" : "day streak"}${st.best_streak ? ` <span class="muted">best ${st.best_streak}</span>` : ""}</div>
+      <div><b>${w ? w.toFixed(1) : "—"}</b>errors/100 words this week ${deltaHTML(w, pw)}</div>
+      <div><b>${pct(st.drill_accuracy)}</b>drill accuracy, last 20</div>
+      <div><b>${st.ripe_topics}/${st.total_topics}</b>topics ripe right now</div>`;
+    const facts = [];
+    if (st.peak_day_rate) facts.push(`Your worst day ever peaked at <b>${st.peak_day_rate.toFixed(1)}</b> errors/100 words.`);
+    if (st.best_month_rate && st.current_rate && st.current_rate > st.best_month_rate) facts.push(`Best month so far: <b>${st.best_month_rate.toFixed(1)}</b>/100 — this month you are at <b>${st.current_rate.toFixed(1)}</b>.`);
+    if (st.top_rule) facts.push(`All-time champion: “${esc(st.top_rule)}” — <b>${times(st.top_rule_count)}</b>.`);
+    if (st.new_rules?.length) facts.push(`Fresh quarries this month: ${st.new_rules.map((r) => `“${esc(r.rule)}”`).join(", ")}.`);
+    let cardHTML = "";
+    try {
+      const card = await cheerPromise;
+      if (card) {
+        cardHTML = `<p class="sentence headline">${esc(card.headline)}</p>
+          <p class="prose">${esc(card.cheer)}</p>
+          ${card.nudge ? `<p class="prose muted">${esc(card.nudge)}</p>` : ""}
+          <p class="cost">${esc(card.backend || "")}</p>`;
+      }
+    } catch {}
+    if (!cardHTML) {
+      cardHTML = w && pw && w < pw
+        ? `<p class="sentence headline">Rate is down ${Math.round(((pw - w) / pw) * 100)}% week over week.</p>`
+        : `<p class="sentence headline">Every logged mistake is one you will not make twice.</p>`;
+    }
+    section.innerHTML = `
+      <div class="text">
+        <h2>Are you actually getting better?</h2>
+        ${cardHTML}
+        <div class="figures">${figures}</div>
+        ${months.length > 1 ? `<svg class="chart" viewBox="0 0 ${months.length * 40 + 16} 108" role="img" aria-label="Monthly mistake rate">${bars}</svg>` : ""}
+        <ul class="plain facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul>
+        <div class="actions"><a class="button primary" href="#/review">Review due cards</a></div>
+      </div>
+      <aside class="note"><strong>Lower is better.</strong><p>The rate counts only checked prompt words; texts you paste in Check are not in it.</p></aside>`;
+  } catch (e) {
+    toast(`Growth card failed: ${e.message}`);
+  } finally {
+    anchor.disabled = false;
+    anchor.textContent = "Cheer me up";
+    if (section) section.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
+  }
 }
 
 /* ---------- mistakes ---------- */
@@ -775,10 +1212,17 @@ const routes = [
   [/^#?\/?$/, () => today(), "today"],
   [/^#\/drill\/([\w-]+)$/, (m) => drill(m[1]), null],
   [/^#\/review$/, () => drill("review"), "review"],
-  [/^#\/speak$/, () => speakView(), "speak"],
+  [/^#\/speak(?:\?.*)?$/, () => speakFromHash(), "speak"],
+  [/^#\/work(?:\/([\w-]+))?$/, (m) => workView(m[1]), "work"],
+  [/^#\/check$/, () => checkView(), "check"],
   [/^#\/mistakes$/, () => mistakesView(), "mistakes"],
   [/^#\/lessons(?:\/([\w-]+))?$/, (m) => lessonsView(m[1]), "lessons"],
 ];
+
+function speakFromHash() {
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  speakView(params.get("mode") || "grammar", params.get("prompt") || "");
+}
 
 async function route() {
   keyHandler = null;

@@ -1,0 +1,76 @@
+{
+  "categories": [
+    {
+      "id": "standup",
+      "title": "Daily stand-up",
+      "phrases": [
+        {"text": "Yesterday I shipped the X endpoint and fixed a flaky test in Y."},
+        {"text": "Today I am picking up the Z ticket; I expect to open a PR by the end of the day."},
+        {"text": "The only thing blocking me is waiting for a review on the W MR."},
+        {"text": "I will be on support rotation this afternoon, so progress may be slower."}
+      ],
+      "prompts": [
+        "Give a stand-up update: what did you do yesterday, what will you do today, and what is blocking you?"
+      ]
+    },
+    {
+      "id": "code-review",
+      "title": "Code review comments",
+      "phrases": [
+        {"text": "Could we extract this into a helper? It would make the flow easier to follow."},
+        {"text": "This looks correct, but I would add a test for the timeout branch."},
+        {"text": "Nit: the variable name is a bit vague; maybe deadline or budget would be clearer."},
+        {"text": "Good catch on the race condition. Let's document why we need the lock here."}
+      ],
+      "prompts": [
+        "Give feedback on a pull request that works but is hard to read. Be kind and specific."
+      ]
+    },
+    {
+      "id": "incident",
+      "title": "Explaining an incident",
+      "phrases": [
+        {"text": "The symptom was intermittent 502s on the offers list starting at 14:00 UTC."},
+        {"text": "The root cause was a downstream call without its own deadline, which ate the caller's budget."},
+        {"text": "We mitigated by shortening the timeout and letting the best-effort enrichment fail open."},
+        {"text": "The follow-up is to add per-endpoint p99.9 alerts and a circuit breaker."}
+      ],
+      "prompts": [
+        "Describe a production incident you investigated: the symptom, the root cause, and the fix."
+      ]
+    },
+    {
+      "id": "architecture",
+      "title": "Architecture overview",
+      "phrases": [
+        {"text": "The service owns the listing lifecycle and publishes events to Kafka when the state changes."},
+        {"text": "Reads go through a cache; writes hit PostgreSQL and then invalidate the cache."},
+        {"text": "The main failure modes are stale cache, partition lag, and downstream unavailability."},
+        {"text": "We chose synchronous calls for launch speed, with a plan to move to an event-driven sync."}
+      ],
+      "prompts": [
+        "Describe the architecture of a service you know well: what it does, what it talks to, and where it can fail."
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Behavioral interview",
+      "phrases": [
+        {"text": "I am a backend engineer with three years of Go, mostly in marketplace and scoring systems."},
+        {"text": "The situation was that return orders had stopped being saved for 24 days."},
+        {"text": "My task was to find the cause, stop the loss, and recover the data the same day."},
+        {"text": "I traced it through git history and logs, shipped a tolerant parser, and replayed 10,394 records."},
+        {"text": "The result was full recovery in about two hours and new alerts on zero business throughput."}
+      ],
+      "prompts": [
+        "Tell me about yourself, as at the start of a job interview.",
+        "Describe a production incident you led from detection to resolution.",
+        "Tell me about a time you had to ship something fast with limited people.",
+        "Describe the hardest technical problem you have solved and what you learned from it.",
+        "Tell me about a time you disagreed with a colleague. What happened and how did it end?",
+        "Explain a trade-off you made recently: what you chose, what you gave up, and why.",
+        "Tell me about a mistake you made at work and how you handled it."
+      ]
+    }
+  ]
+}

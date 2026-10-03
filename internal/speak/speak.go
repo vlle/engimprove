@@ -1,4 +1,4 @@
-// Package speak records spoken answers, transcribes them with whisper.cpp and keeps their reviews.
+// Package speak records spoken answers, transcribes them and keeps their reviews.
 package speak
 
 import (
@@ -23,14 +23,20 @@ import (
 
 // Recording is one spoken answer and, once reviewed, its feedback.
 type Recording struct {
-	ID         string  `json:"id"`
-	TS         string  `json:"ts"`
-	Prompt     string  `json:"prompt"`
-	Focus      string  `json:"focus,omitempty"`
-	Transcript string  `json:"transcript"`
-	Seconds    float64 `json:"seconds"`
-	Words      int     `json:"words"`
-	Review     *Review `json:"review,omitempty"`
+	ID              string                   `json:"id"`
+	TS              string                   `json:"ts"`
+	Prompt          string                   `json:"prompt"`
+	Focus           string                   `json:"focus,omitempty"`
+	Transcript      string                   `json:"transcript"`
+	Seconds         float64                  `json:"seconds"`
+	Words           int                      `json:"words"`
+	WhisperModel    string                   `json:"whisper_model"`
+	WhisperBackend  string                   `json:"whisper_backend"`
+	WhisperCost     float64                  `json:"whisper_cost"`
+	ReviewCost      float64                  `json:"review_cost"`
+	ReviewBackend   string                   `json:"review_backend"`
+	Review          *Review                  `json:"review,omitempty"`
+	InterviewReview *coach.InterviewReview   `json:"interview_review,omitempty"`
 }
 
 // Review is the feedback on a recording.
@@ -39,6 +45,52 @@ type Review struct {
 	Logged     []logbook.Logged `json:"logged"`
 	ReviewedBy string           `json:"reviewed_by"`
 	TS         string           `json:"ts"`
+}
+
+// Transcriber turns audio bytes into a transcript.
+type Transcriber interface {
+	Transcribe(ctx context.Context, audio []byte, ext string) (transcript string, seconds, cost float64, err error)
+	Backend() string
+	Model() string
+}
+
+// LocalTranscriber uses ffmpeg + whisper-cli.
+type LocalTranscriber struct {
+	Tools Tools
+}
+
+// NewLocalTranscriber builds a transcriber from local tools.
+func NewLocalTranscriber(t Tools) *LocalTranscriber { return &LocalTranscriber{Tools: t} }
+
+func (l *LocalTranscriber) Backend() string { return "local" }
+func (l *LocalTranscriber) Model() string   { return filepath.Base(l.Tools.Model) }
+
+func (l *LocalTranscriber) Transcribe(ctx context.Context, audio []byte, ext string) (string, float64, float64, error) {
+	if !l.Tools.Ready {
+		return "", 0, 0, fmt.Errorf("speaking pipeline not ready: missing %s", l.Tools.Missing)
+	}
+	dir, err := os.MkdirTemp("", "eng-speak-*")
+	if err != nil {
+		return "", 0, 0, err
+	}
+	defer os.RemoveAll(dir)
+	src := filepath.Join(dir, "upload"+ext)
+	if err := os.WriteFile(src, audio, 0o644); err != nil {
+		return "", 0, 0, err
+	}
+	wav := filepath.Join(dir, "audio.wav")
+	if out, err := run(ctx, l.Tools.FFmpeg, "-y", "-loglevel", "error", "-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav); err != nil {
+		return "", 0, 0, fmt.Errorf("ffmpeg: %w: %s", err, out)
+	}
+	prefix := filepath.Join(dir, "transcript")
+	if out, err := run(ctx, l.Tools.Whisper, "-m", l.Tools.Model, "-l", "en", "-nt", "-np", "-otxt", "-of", prefix, "-f", wav); err != nil {
+		return "", 0, 0, fmt.Errorf("whisper-cli: %w: %s", err, out)
+	}
+	raw, err := os.ReadFile(prefix + ".txt")
+	if err != nil {
+		return "", 0, 0, err
+	}
+	return strings.Join(strings.Fields(string(raw)), " "), wavSeconds(wav), 0, nil
 }
 
 // Tools reports what the speaking pipeline can use right now.
@@ -87,42 +139,35 @@ func Detect(s data.Store, model string) Tools {
 }
 
 // Save stores the uploaded audio, converts it to 16 kHz wav and transcribes it.
-func Save(ctx context.Context, s data.Store, tools Tools, audio io.Reader, ext, prompt, focus string) (Recording, error) {
-	if !tools.Ready {
-		return Recording{}, fmt.Errorf("speaking pipeline not ready: missing %s", tools.Missing)
-	}
+func Save(ctx context.Context, s data.Store, tr Transcriber, audio io.Reader, ext, prompt, focus string) (Recording, error) {
 	now := time.Now()
-	rec := Recording{ID: now.Format("20060102-150405"), TS: now.Format(time.RFC3339), Prompt: prompt, Focus: focus}
+	rec := Recording{
+		ID:             now.Format("20060102-150405"),
+		TS:             now.Format(time.RFC3339),
+		Prompt:         prompt,
+		Focus:          focus,
+		WhisperBackend: tr.Backend(),
+		WhisperModel:   tr.Model(),
+	}
 	dir := s.Path("speaking", rec.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return rec, err
 	}
 	src := filepath.Join(dir, "upload"+ext)
-	f, err := os.Create(src)
+	dataBytes, err := io.ReadAll(io.LimitReader(audio, 64<<20))
 	if err != nil {
 		return rec, err
 	}
-	if _, err := io.Copy(f, audio); err != nil {
-		f.Close()
+	if err := os.WriteFile(src, dataBytes, 0o644); err != nil {
 		return rec, err
 	}
-	if err := f.Close(); err != nil {
-		return rec, err
-	}
-	wav := filepath.Join(dir, "audio.wav")
-	if out, err := run(ctx, tools.FFmpeg, "-y", "-loglevel", "error", "-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav); err != nil {
-		return rec, fmt.Errorf("ffmpeg: %w: %s", err, out)
-	}
-	rec.Seconds = wavSeconds(wav)
-	prefix := filepath.Join(dir, "transcript")
-	if out, err := run(ctx, tools.Whisper, "-m", tools.Model, "-l", "en", "-nt", "-np", "-otxt", "-of", prefix, "-f", wav); err != nil {
-		return rec, fmt.Errorf("whisper-cli: %w: %s", err, out)
-	}
-	raw, err := os.ReadFile(prefix + ".txt")
+	transcript, seconds, cost, err := tr.Transcribe(ctx, dataBytes, ext)
 	if err != nil {
 		return rec, err
 	}
-	rec.Transcript = strings.Join(strings.Fields(string(raw)), " ")
+	rec.Transcript = transcript
+	rec.Seconds = seconds
+	rec.WhisperCost = cost
 	rec.Words = lang.Analyze(rec.Transcript).Words
 	return rec, write(s, rec)
 }
@@ -190,7 +235,7 @@ func Pending(s data.Store) ([]Recording, error) {
 	}
 	var out []Recording
 	for _, r := range all {
-		if r.Review == nil && r.Transcript != "" {
+		if r.Review == nil && r.InterviewReview == nil && r.Transcript != "" {
 			out = append(out, r)
 		}
 	}
@@ -216,6 +261,16 @@ func Apply(s data.Store, rec Recording, review coach.SpeechReview, by string) (R
 		r.Logged = logged
 	}
 	rec.Review = r
+	rec.ReviewBackend = by
+	rec.ReviewCost = review.Cost
+	return rec, write(s, rec)
+}
+
+// ApplyInterview stores an interview/STAR review with the recording.
+func ApplyInterview(s data.Store, rec Recording, review coach.InterviewReview, by string) (Recording, error) {
+	rec.InterviewReview = &review
+	rec.ReviewBackend = by
+	rec.ReviewCost = review.Cost
 	return rec, write(s, rec)
 }
 
@@ -239,4 +294,17 @@ func Pick(s data.Store, weakRules []string) (Question, error) {
 		q.Focus = weakRules[rand.IntN(min(len(weakRules), 3))]
 	}
 	return q, nil
+}
+
+// TotalSpend returns the sum of whisper + review costs across all recordings.
+func TotalSpend(s data.Store) (float64, error) {
+	all, err := List(s)
+	if err != nil {
+		return 0, err
+	}
+	var total float64
+	for _, r := range all {
+		total += r.WhisperCost + r.ReviewCost
+	}
+	return total, nil
 }

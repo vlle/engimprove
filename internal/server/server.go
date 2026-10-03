@@ -9,18 +9,23 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"engimprove/internal/cards"
 	"engimprove/internal/coach"
+	"engimprove/internal/buildinfo"
 	"engimprove/internal/config"
 	"engimprove/internal/data"
 	"engimprove/internal/hook"
+	"engimprove/internal/logbook"
+	"engimprove/internal/resume"
 	"engimprove/internal/speak"
 	"engimprove/internal/topics"
 )
@@ -30,6 +35,7 @@ type Server struct {
 	Store  data.Store
 	Config config.Config
 	Coach  *coach.Coach
+	Resume *resume.Loader
 	Static fs.FS
 	Log    *log.Logger
 }
@@ -45,11 +51,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/session", s.session)
 	mux.HandleFunc("GET /api/mistakes", s.mistakes)
 	mux.HandleFunc("GET /api/lessons", s.lessons)
+	mux.HandleFunc("GET /api/work-english", s.workEnglish)
 	mux.HandleFunc("POST /api/packs/{topic}", s.generatePack)
 	mux.HandleFunc("GET /api/speak/question", s.speakQuestion)
 	mux.HandleFunc("GET /api/speak", s.speakList)
 	mux.HandleFunc("POST /api/speak", s.speakUpload)
 	mux.HandleFunc("POST /api/speak/{id}/review", s.speakReview)
+	mux.HandleFunc("POST /api/check", s.checkText)
+	mux.HandleFunc("POST /api/check/{id}/log", s.logCheckedText)
+	mux.HandleFunc("POST /api/check/explain", s.explainCheckedMistake)
+	mux.HandleFunc("GET /api/growth", s.growth)
+	mux.HandleFunc("POST /api/growth/cheer", s.cheer)
 	mux.Handle("GET /", http.FileServerFS(s.Static))
 	return s.guard(mux)
 }
@@ -151,10 +163,21 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	}
 	pending, _ := speak.Pending(s.Store)
 	recs, _ := speak.List(s.Store)
+	totalSpend, _ := speak.TotalSpend(s.Store)
 	llmName, llmErr := s.Coach.Backend(false)
 	llmStatus := map[string]any{"ok": llmErr == nil, "backend": llmName}
 	if llmErr != nil {
 		llmStatus["error"] = llmErr.Error()
+	}
+	whisperStatus := map[string]any{
+		"backend":       s.Config.WhisperBackend,
+		"model":         s.Config.OpenRouterWhisperModel,
+		"local_ready":   speak.Detect(s.Store, s.Config.WhisperModel).Ready,
+		"openrouter_ok": s.Coach.OpenRouter() != nil,
+	}
+	resumeStatus := map[string]any{"loaded": s.Resume != nil && s.Resume.Enabled(), "files": []string{}}
+	if s.Resume != nil {
+		resumeStatus["files"] = s.Resume.Files()
 	}
 
 	unseen := 0
@@ -195,8 +218,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"weeks":     weeks(snap.entries, checks, answers, now),
 		"streak":    streak(answers, now),
 		"today":     countToday(answers, now),
-		"speaking":  map[string]any{"pending": len(pending), "total": len(recs), "tools": speak.Detect(s.Store, s.Config.WhisperModel)},
+		"speaking":  map[string]any{"pending": len(pending), "total": len(recs), "tools": speak.Detect(s.Store, s.Config.WhisperModel), "spend": totalSpend},
 		"llm":       llmStatus,
+		"whisper":   whisperStatus,
+		"resume":    resumeStatus,
+		"version":   buildinfo.Read(),
 		"url":       s.Config.URL(),
 	})
 }
@@ -354,8 +380,9 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) explainCard(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
-		Card  string `json:"card"`
-		Given string `json:"given"`
+		Card     string             `json:"card"`
+		Given    string             `json:"given"`
+		Previous *coach.Explanation `json:"previous"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		fail(w, http.StatusBadRequest, err)
@@ -386,12 +413,38 @@ func (s *Server) explainCard(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(&lesson, "\n%s lesson:\n%s", topic, raw)
 		}
 	}
-	explanation, err := s.Coach.ExplainCard(r.Context(), card, req.Given, lesson.String())
+	explanation, err := s.Coach.ExplainCard(r.Context(), card, req.Given, lesson.String(), req.Previous)
 	if err != nil {
 		fail(w, http.StatusBadGateway, err)
 		return
 	}
-	writeJSON(w, map[string]string{"explanation": explanation})
+	writeJSON(w, map[string]any{"explanation": explanation, "history": ruleHistory(snap.entries, card)})
+}
+
+type pastSlip struct {
+	Date   string `json:"date"`
+	Before string `json:"before"`
+	After  string `json:"after"`
+}
+
+type history struct {
+	Count int        `json:"count"`
+	Slips []pastSlip `json:"slips"`
+}
+
+// ruleHistory lists the newest other slips on the card's rule; count includes the card's own.
+func ruleHistory(entries []data.Entry, card cards.Card) history {
+	h := history{Slips: []pastSlip{}}
+	for _, e := range slices.Backward(entries) {
+		if !strings.EqualFold(e.Rule, card.Rule) {
+			continue
+		}
+		h.Count++
+		if e.ID != card.EntryID && len(h.Slips) < 4 && e.Before != "" && e.After != "" {
+			h.Slips = append(h.Slips, pastSlip{Date: e.Date, Before: e.Before, After: e.After})
+		}
+	}
+	return h
 }
 
 // FinishSession logs a drill and moves the topic cursor past every mistake seen so far.
@@ -453,6 +506,29 @@ func (s *Server) lessons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, lessons)
+}
+
+func (s *Server) workEnglish(w http.ResponseWriter, r *http.Request) {
+	var out struct {
+		Categories []workCategory `json:"categories"`
+	}
+	if err := data.ReadJSON(s.Store.Path("content", "work-english.json"), &out); err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, out)
+}
+
+type workCategory struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Phrases  []phrase `json:"phrases,omitempty"`
+	Prompts  []string `json:"prompts,omitempty"`
+}
+
+type phrase struct {
+	Text  string `json:"text"`
+	Notes string `json:"notes,omitempty"`
 }
 
 // TopicMistakes returns the newest mistakes of a topic, for prompting Claude.
@@ -555,13 +631,44 @@ func (s *Server) speakUpload(w http.ResponseWriter, r *http.Request) {
 	if !slices.Contains([]string{".webm", ".ogg", ".mp4", ".m4a", ".wav"}, ext) {
 		ext = ".webm"
 	}
-	tools := speak.Detect(s.Store, s.Config.WhisperModel)
-	rec, err := speak.Save(r.Context(), s.Store, tools, file, ext, r.FormValue("prompt"), r.FormValue("focus"))
+	tr, err := s.transcriber()
 	if err != nil {
-		fail(w, http.StatusInternalServerError, err)
+		fail(w, http.StatusServiceUnavailable, err)
 		return
 	}
+	rec, err := speak.Save(r.Context(), s.Store, tr, file, ext, r.FormValue("prompt"), r.FormValue("focus"))
+	if err != nil {
+		// Fallback to local whisper if OpenRouter failed and local tools are ready.
+		if s.Config.WhisperBackend == "openrouter" {
+			tools := speak.Detect(s.Store, s.Config.WhisperModel)
+			if tools.Ready {
+				if file, header, err = r.FormFile("audio"); err == nil {
+					defer file.Close()
+					tr = speak.NewLocalTranscriber(tools)
+					rec, err = speak.Save(r.Context(), s.Store, tr, file, ext, r.FormValue("prompt"), r.FormValue("focus"))
+				}
+			}
+		}
+		if err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	writeJSON(w, rec)
+}
+
+// transcriber picks the configured transcription backend.
+func (s *Server) transcriber() (speak.Transcriber, error) {
+	if s.Config.WhisperBackend == "openrouter" {
+		if or := s.Coach.OpenRouter(); or != nil {
+			return speak.NewOpenRouterTranscriber(or, s.Config.OpenRouterWhisperModel), nil
+		}
+	}
+	tools := speak.Detect(s.Store, s.Config.WhisperModel)
+	if !tools.Ready {
+		return nil, errors.New("no transcription backend: " + tools.Missing)
+	}
+	return speak.NewLocalTranscriber(tools), nil
 }
 
 func (s *Server) speakReview(w http.ResponseWriter, r *http.Request) {
@@ -570,19 +677,467 @@ func (s *Server) speakReview(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, err)
 		return
 	}
-	if rec.Review != nil {
+	mode := strings.ToLower(r.URL.Query().Get("mode"))
+	if mode == "" {
+		mode = "grammar"
+	}
+	if rec.Review != nil && mode == "grammar" {
 		writeJSON(w, rec)
 		return
 	}
-	review, backend, err := s.Coach.ReviewSpeech(r.Context(), s.Store, rec.Prompt, rec.Transcript)
-	if err != nil {
-		fail(w, http.StatusBadGateway, err)
+	if rec.InterviewReview != nil && mode == "star" {
+		writeJSON(w, rec)
 		return
 	}
-	rec, err = speak.Apply(s.Store, rec, review, backend)
+	resumeContext := ""
+	if s.Resume != nil {
+		resumeContext = s.Resume.Context()
+	}
+	switch mode {
+	case "star":
+		review, backend, err := s.Coach.ReviewInterview(r.Context(), s.Store, rec.Prompt, rec.Transcript, resumeContext)
+		if err != nil {
+			fail(w, http.StatusBadGateway, err)
+			return
+		}
+		rec, err = speak.ApplyInterview(s.Store, rec, review, backend)
+	case "grammar":
+		review, backend, err := s.Coach.ReviewSpeech(r.Context(), s.Store, rec.Prompt, rec.Transcript, resumeContext)
+		if err != nil {
+			fail(w, http.StatusBadGateway, err)
+			return
+		}
+		rec, err = speak.Apply(s.Store, rec, review, backend)
+	default:
+		fail(w, http.StatusBadRequest, errors.New("unknown review mode: "+mode))
+		return
+	}
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, rec)
+}
+
+// checkedText is one pasted text between its LLM check and the confirm-to-log step.
+type checkedText struct {
+	ID        string             `json:"id"`
+	TS        string             `json:"ts"`
+	TextID    string             `json:"text_id"`
+	Original  string             `json:"original"`
+	Corrected string             `json:"corrected"`
+	Errors    []logbook.NewError `json:"errors"`
+	// Counted is how many times each rule was already in the database at check time.
+	Counted map[string]int `json:"counted,omitempty"`
+	Backend string         `json:"backend"`
+	Cost    float64        `json:"cost"`
+	Logged  int            `json:"logged,omitempty"`
+}
+
+func (s *Server) checkText(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	req.Text = strings.TrimSpace(req.Text)
+	if req.Text == "" {
+		fail(w, http.StatusBadRequest, errors.New("text is required"))
+		return
+	}
+	res, backend, err := s.Coach.CheckText(r.Context(), s.Store, req.Text)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err)
+		return
+	}
+	if res.Errors == nil {
+		res.Errors = []logbook.NewError{}
+	}
+	if res.Corrected == "" {
+		res.Corrected = req.Text
+	}
+	out := checkedText{
+		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+		TS:        time.Now().Format(time.RFC3339),
+		TextID:    data.Today() + "-web-" + textSlug(req.Text),
+		Original:  req.Text,
+		Corrected: res.Corrected,
+		Errors:    res.Errors,
+		Backend:   backend,
+		Cost:      res.Cost,
+	}
+	if entries, err := s.Store.Entries(); err == nil {
+		out.Counted = ruleCount(entries)
+	}
+	if err := data.WriteJSON(s.Store.Path("state", "check-web", out.ID+".json"), out); err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, out)
+}
+
+// textSlug names the text after its first words, for the texts/ archive filename.
+func textSlug(text string) string {
+	var b strings.Builder
+	n := 0
+	for _, w := range strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		if n == 4 {
+			break
+		}
+		b.WriteString(strings.ToLower(w))
+		b.WriteString("-")
+		n++
+	}
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		slug = "pasted-text"
+	}
+	return slug
+}
+
+// ruleCount counts how often each rule already sits in the database.
+func ruleCount(entries []data.Entry) map[string]int {
+	counts := map[string]int{}
+	for _, e := range entries {
+		counts[e.Rule]++
+	}
+	return counts
+}
+
+func (s *Server) logCheckedText(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if strings.ContainsAny(id, "/\\.") {
+		fail(w, http.StatusBadRequest, errors.New("bad check id"))
+		return
+	}
+	var draft checkedText
+	path := s.Store.Path("state", "check-web", id+".json")
+	if _, err := os.Stat(path); err != nil {
+		fail(w, http.StatusNotFound, fmt.Errorf("check %s not found", id))
+		return
+	}
+	if err := data.ReadJSON(path, &draft); err != nil {
+		fail(w, http.StatusNotFound, err)
+		return
+	}
+	if draft.Original == "" {
+		fail(w, http.StatusNotFound, fmt.Errorf("check %s is empty", id))
+		return
+	}
+	if draft.Logged > 0 {
+		fail(w, http.StatusConflict, errors.New("this text is already logged"))
+		return
+	}
+	var loggable []logbook.NewError
+	var style []logbook.NewError
+	for _, e := range draft.Errors {
+		if e.Category == "style" {
+			style = append(style, e)
+			continue
+		}
+		loggable = append(loggable, e)
+	}
+	if len(loggable) > 0 {
+		logged, _, err := logbook.Log(s.Store, logbook.Input{
+			TextID:    draft.TextID,
+			Source:    "web",
+			Project:   "pasted text",
+			Original:  draft.Original,
+			Corrected: draft.Corrected,
+			Errors:    loggable,
+		})
+		if err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
+		draft.Logged = len(logged)
+	}
+	draft.Errors = append(loggable, style...)
+	entries, err := s.Store.Entries()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	counts := ruleCount(entries)
+	if err := data.WriteJSON(s.Store.Path("state", "check-web", id+".json"), draft); err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]any{"logged": draft.Logged, "counted": counts})
+}
+
+// explainCheckedMistake gives a drill-style modular explanation for one mistake found in a pasted text.
+func (s *Server) explainCheckedMistake(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		Category string             `json:"category"`
+		Rule     string             `json:"rule"`
+		Before   string             `json:"before"`
+		After    string             `json:"after"`
+		Note     string             `json:"note"`
+		Previous *coach.Explanation `json:"previous"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Rule == "" || req.Before == "" || req.After == "" || len(req.Before) > 500 || len(req.After) > 500 {
+		fail(w, http.StatusBadRequest, errors.New("rule, before and after under 500 characters are required"))
+		return
+	}
+	snap, err := s.load()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	card := cards.Card{
+		Type:     cards.Fix,
+		Source:   "mistake",
+		Category: req.Category,
+		Rule:     req.Rule,
+		Before:   req.Before,
+		After:    req.After,
+		Note:     req.Note,
+		Answers:  []string{req.After},
+	}
+	var lessons map[string]json.RawMessage
+	if err := data.ReadJSON(s.Store.Path("content", "lessons.json"), &lessons); err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	var lesson strings.Builder
+	for _, topic := range topics.Of(s.Config, data.Entry{Category: req.Category, Rule: req.Rule}) {
+		if raw := lessons[topic]; len(raw) > 0 {
+			fmt.Fprintf(&lesson, "\n%s lesson:\n%s", topic, raw)
+		}
+	}
+	explanation, err := s.Coach.ExplainCard(r.Context(), card, req.Before, lesson.String(), req.Previous)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, map[string]any{"explanation": explanation, "history": ruleHistory(snap.entries, card)})
+}
+
+func (s *Server) growth(w http.ResponseWriter, r *http.Request) {
+	snap, err := s.load()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	stats := newGrowthStats(s.Store, s.Config, snap.entries, time.Now())
+	name, llmErr := s.Coach.Backend(false)
+	stats.LLMOk = llmErr == nil
+	stats.LLMBackend = name
+	writeJSON(w, stats)
+}
+
+func (s *Server) cheer(w http.ResponseWriter, r *http.Request) {
+	snap, err := s.load()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	stats := newGrowthStats(s.Store, s.Config, snap.entries, time.Now())
+	card, backend, err := s.Coach.Cheer(r.Context(), coach.GrowthInput{
+		Now:           stats.Now,
+		Streak:        stats.Streak,
+		WeekRate:      stats.WeekRate,
+		PrevWeekRate:  stats.PrevWeekRate,
+		TotalMistakes: stats.TotalMistakes,
+		TotalTexts:    stats.TotalTexts,
+		DrillAccuracy: stats.DrillAccuracy,
+		RipeTopics:    stats.RipeTopics,
+		TotalTopics:   stats.TotalTopics,
+		TopRule:       stats.TopRule,
+		TopRuleCount:  stats.TopRuleCount,
+		BestMonthRate: stats.BestMonthRate,
+		CurrentRate:   stats.CurrentRate,
+	})
+	if err != nil {
+		fail(w, http.StatusBadGateway, err)
+		return
+	}
+	card.Backend = backend
+	writeJSON(w, card)
+}
+
+type growthStats struct {
+	Now           string      `json:"now"`
+	Streak        int         `json:"streak"`
+	BestStreak    int         `json:"best_streak"`
+	WeekRate      float64     `json:"week_rate"`
+	PrevWeekRate  float64     `json:"prev_week_rate"`
+	Months        []monthRate `json:"months"`
+	CurrentRate   float64     `json:"current_rate"`
+	BestMonthRate float64     `json:"best_month_rate"`
+	DrillAccuracy float64     `json:"drill_accuracy"`
+	PeakDayRate   float64     `json:"peak_day_rate"`
+	RipeTopics    int         `json:"ripe_topics"`
+	TotalTopics   int         `json:"total_topics"`
+	TopRule       string      `json:"top_rule"`
+	TopRuleCount  int         `json:"top_rule_count"`
+	NewRules      []ruleRow   `json:"new_rules"`
+	TotalMistakes int         `json:"total_mistakes"`
+	TotalTexts    int         `json:"total_texts"`
+	LLMOk         bool        `json:"llm_ok"`
+	LLMBackend    string      `json:"llm_backend,omitempty"`
+}
+
+type monthRate struct {
+	Month string  `json:"month"`
+	Rate  float64 `json:"rate"`
+	Words int     `json:"words"`
+}
+
+// newGrowthStats assembles the numbers behind the growth card.
+func newGrowthStats(st data.Store, cfg config.Config, entries []data.Entry, now time.Time) growthStats {
+	checks, err := data.ReadJSONL[hook.CheckLog](st.Path("state", "checks.jsonl"))
+	if err != nil {
+		checks = nil
+	}
+	answers, err := data.ReadJSONL[cards.Answer](st.Path("state", "answers.jsonl"))
+	if err != nil {
+		answers = nil
+	}
+	sessions, _ := topics.Sessions(st)
+	statuses := topics.Statuses(cfg, entries, sessions)
+
+	out := growthStats{
+		Now:           now.Format(time.RFC3339),
+		Streak:        streak(answers, now),
+		TotalTopics:   len(statuses),
+		TotalMistakes: len(entries),
+	}
+	for _, t := range statuses {
+		if t.Ready {
+			out.RipeTopics++
+		}
+	}
+	texts := map[string]bool{}
+	rules := map[string]*ruleRow{}
+	for _, e := range entries {
+		texts[e.TextID] = true
+		if rr, ok := rules[e.Rule]; ok {
+			rr.Count++
+		} else {
+			rules[e.Rule] = &ruleRow{Rule: e.Rule, Category: e.Category, Count: 1, Last: e.Date}
+		}
+	}
+	out.TotalTexts = len(texts)
+	for _, rr := range rules {
+		if rr.Count > out.TopRuleCount {
+			out.TopRule, out.TopRuleCount = rr.Rule, rr.Count
+		}
+	}
+	// rules logged only in the last 30 days are the fresh quarries.
+	cutoff := now.AddDate(0, 0, -30).Format("2006-01-02")
+	for _, rr := range rules {
+		if rr.Last >= cutoff {
+			out.NewRules = append(out.NewRules, *rr)
+		}
+	}
+	sort.Slice(out.NewRules, func(i, j int) bool { return out.NewRules[i].Count > out.NewRules[j].Count })
+	if len(out.NewRules) > 3 {
+		out.NewRules = out.NewRules[:3]
+	}
+
+	// monthly mistake rate over checked prompt words, from the oldest month with checks.
+	words, mistakes := map[string]int{}, map[string]int{}
+	for _, c := range checks {
+		if t, err := time.Parse(time.RFC3339, c.TS); err == nil {
+			key := t.In(now.Location()).Format("2006-01")
+			words[key] += c.Words
+			mistakes[key] += c.Mistakes
+		}
+	}
+	current := now.Format("2006-01")
+	for key, w := range words {
+		if w < 100 {
+			continue
+		}
+		rate := float64(mistakes[key]) * 100 / float64(w)
+		out.Months = append(out.Months, monthRate{Month: key, Rate: rate, Words: w})
+		if out.BestMonthRate == 0 || rate < out.BestMonthRate {
+			out.BestMonthRate = rate
+		}
+		if key == current {
+			out.CurrentRate = rate
+		}
+	}
+	if w := words[current]; w > 0 && out.CurrentRate == 0 {
+		out.CurrentRate = float64(mistakes[current]) * 100 / float64(w)
+	}
+	sort.Slice(out.Months, func(i, j int) bool { return out.Months[i].Month < out.Months[j].Month })
+
+	// last two full ISO weeks for the headline delta.
+	lastWeek, prevWeek := weekStart(now).AddDate(0, 0, -7), weekStart(now).AddDate(0, 0, -14)
+	out.WeekRate, out.PrevWeekRate = weekRates(checks, lastWeek, prevWeek, now)
+
+	// the worst single day ever, for "you peaked at X".
+	dayWords, dayMistakes := map[string]int{}, map[string]int{}
+	for _, c := range checks {
+		t, err := time.Parse(time.RFC3339, c.TS)
+		if err != nil {
+			continue
+		}
+		key := t.In(now.Location()).Format("2006-01-02")
+		dayWords[key] += c.Words
+		dayMistakes[key] += c.Mistakes
+	}
+	for key, w := range dayWords {
+		if w >= 30 {
+			if r := float64(dayMistakes[key]) * 100 / float64(w); r > out.PeakDayRate {
+				out.PeakDayRate = r
+			}
+		}
+	}
+	// drill accuracy over the last 20 answers.
+	const window = 20
+	start := max(len(answers)-window, 0)
+	right, total := 0, 0
+	for _, a := range answers[start:] {
+		total++
+		if a.OK {
+			right++
+		}
+	}
+	if total > 0 {
+		out.DrillAccuracy = float64(right) / float64(total)
+	}
+	return out
+}
+
+// weekRates turns two ISO weeks into mistakes per 100 checked words.
+func weekRates(checks []hook.CheckLog, lastWeek, prevWeek, now time.Time) (float64, float64) {
+	words, mistakes := map[string]int{}, map[string]int{}
+	bucket := func(t time.Time) string {
+		switch {
+		case !t.Before(lastWeek):
+			return "last"
+		case !t.Before(prevWeek):
+			return "prev"
+		}
+		return ""
+	}
+	for _, c := range checks {
+		t, err := time.Parse(time.RFC3339, c.TS)
+		if err != nil {
+			continue
+		}
+		if b := bucket(t.In(now.Location())); b != "" {
+			words[b] += c.Words
+			mistakes[b] += c.Mistakes
+		}
+	}
+	rate := func(b string) float64 {
+		if words[b] == 0 {
+			return 0
+		}
+		return float64(mistakes[b]) * 100 / float64(words[b])
+	}
+	return rate("last"), rate("prev")
 }

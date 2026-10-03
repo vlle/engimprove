@@ -31,6 +31,9 @@ func New(cfg config.Config) *Coach {
 	return c
 }
 
+// OpenRouter returns the underlying OpenRouter client, if any.
+func (c *Coach) OpenRouter() *llm.OpenRouter { return c.or }
+
 // Backend names the service that would answer; private text never goes to OpenRouter.
 func (c *Coach) Backend(private bool) (string, error) {
 	switch {
@@ -44,31 +47,31 @@ func (c *Coach) Backend(private bool) (string, error) {
 	return "", fmt.Errorf("no llm backend: %v; %v", c.orErr, c.cliErr)
 }
 
-func (c *Coach) structured(ctx context.Context, private bool, name, prompt, schema string, out any) (string, error) {
+func (c *Coach) structured(ctx context.Context, private bool, name, prompt, schema string, out any) (string, *llm.Usage, error) {
 	fallback := ""
 	if !private && c.or != nil {
-		raw, err := c.or.JSON(ctx, c.cfg.OpenRouterModel, prompt, name, json.RawMessage(schema))
+		raw, usage, err := c.or.JSON(ctx, c.cfg.OpenRouterModel, prompt, name, json.RawMessage(schema))
 		if err == nil {
 			err = json.Unmarshal(raw, out)
 		}
 		if err == nil {
-			return "openrouter " + c.cfg.OpenRouterModel, nil
+			return "openrouter " + c.cfg.OpenRouterModel, usage, nil
 		}
 		if c.cli == nil {
-			return "", err
+			return "", nil, err
 		}
 		fallback = fmt.Sprintf(" (openrouter failed: %v)", err)
 	}
 	if c.cli == nil {
 		if private {
-			return "", errors.New("private text needs the claude cli, which was not found")
+			return "", nil, errors.New("private text needs the claude cli, which was not found")
 		}
-		return "", fmt.Errorf("no llm backend: %v; %v", c.orErr, c.cliErr)
+		return "", nil, fmt.Errorf("no llm backend: %v; %v", c.orErr, c.cliErr)
 	}
 	if err := c.cli.Structured(ctx, prompt, schema, out); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return "claude -p " + c.cfg.ClaudeModel + fallback, nil
+	return "claude -p " + c.cfg.ClaudeModel + fallback, nil, nil
 }
 
 // Probe makes one tiny call per backend and reports what works.
@@ -80,7 +83,7 @@ func (c *Coach) Probe(ctx context.Context) map[string]string {
 	}
 	if c.or == nil {
 		out["openrouter"] = "unavailable: " + c.orErr.Error()
-	} else if raw, err := c.or.JSON(ctx, c.cfg.OpenRouterModel, `Answer {"ok": true}`, "probe", json.RawMessage(schema)); err != nil {
+	} else if raw, _, err := c.or.JSON(ctx, c.cfg.OpenRouterModel, `Answer {"ok": true}`, "probe", json.RawMessage(schema)); err != nil {
 		out["openrouter"] = "error: " + err.Error()
 	} else if err := json.Unmarshal(raw, &v); err != nil || !v.OK {
 		out["openrouter"] = fmt.Sprintf("unexpected answer: %s", raw)
