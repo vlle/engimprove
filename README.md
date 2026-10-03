@@ -63,10 +63,20 @@ git clone git@github.com:vlle/engimprove.git
 cd engimprove
 go build -o bin/eng ./cmd/eng
 
-bin/eng open      # web app on http://127.0.0.1:7421, starts the server itself
-bin/eng status    # which topics are ripe, how many cards are due
-bin/eng doctor    # checks OpenRouter, claude, whisper, the server, failed checks
+bin/eng install    # scaffolds a fresh clone and registers hooks for every agent it finds
+bin/eng open       # web app on http://127.0.0.1:7421, starts the server itself
+bin/eng status     # which topics are ripe, how many cards are due
+bin/eng doctor     # checks OpenRouter, claude, whisper, the server, failed checks
 ```
+
+What `eng install` does, idempotently — safe to re-run:
+
+- creates what a fresh clone lacks: `errors/errors.jsonl`, a starter `config/eng.json`, `state/`
+- Claude Code: appends the `eng hook` / `eng hook-stop` entries to `~/.claude/settings.json`
+  (backs it up first, keeps every unrelated entry, rewrites stale paths from a moved checkout)
+- opencode: renders `agents/opencode/engimprove.js` with the eng path into
+  `~/.config/opencode/plugins/`; restart opencode once to load it
+- fish: writes the `eng` wrapper function when `~/.config/fish` exists
 
 Optional shell wrapper so `eng` works from anywhere:
 
@@ -76,28 +86,53 @@ function eng --description 'engimprove CLI'
 end
 ```
 
-### Claude Code integration
+### Agent integration
 
-Two hooks make the machine catch your English prompts automatically:
+No time for the manual steps? Copy this prompt into your agent — it performs the whole install
+and reports back:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/path/to/engimprove/bin/eng hook" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/path/to/engimprove/bin/eng hook-stop" }] }]
-  }
-}
+```text
+Install engimprove, an English-learning machine for me. Use the engimprove checkout we are
+working in, or clone git@github.com:vlle/engimprove.git if there is none (Go 1.22+ required).
+
+1. go build -o bin/eng ./cmd/eng && go test ./...
+2. Run bin/eng install. It scaffolds missing data files and registers hooks for Claude Code
+   and opencode idempotently; show me its output and fix anything it reports.
+3. Ask me for my OpenRouter API key and my native language; set "language" in config/eng.json
+   to that language.
+4. Run bin/eng doctor and bin/eng status and tell me what still needs my hand.
+5. If your agent has no hook surface (e.g. Codex), read the "Agent integration" section of
+   README.md and say which manual step you would take; the Check tab of bin/eng open is the
+   universal fallback.
+
+Do not hand-edit state/, errors/ or texts/: the mistake database is append-only and written
+only through bin/eng log. Finish with a short summary of what was installed and what is left.
 ```
+
+The machine catches prompts through two touchpoints, expressed per agent:
+
+| touchpoint | Claude Code | opencode | anything else |
+|---|---|---|---|
+| prompt capture | `UserPromptSubmit` hook → `eng hook` (stdin json) | plugin `chat.message` → `eng hook -session S -text T` | call `eng hook -text T` from any scripting surface |
+| end of turn | `Stop` hook → `eng hook-stop` (stdin json) | plugin `session.idle` → `eng hook-stop -session S` | call `eng hook-stop` when your agent allows an exit hook |
+
+Both CLI hook commands accept `-session`, `-cwd` and `-text` flags as an alternative to the
+stdin payload, so other agent runtimes can drive them from any spawn. Agents without hooks
+(Codex today) get no automatic capture: instruct the agent through its instructions file to
+run `eng hook -text '<user prompt>'` after writing it, or paste English into the Check tab
+of the web app (`eng open check`) — same review pipeline, same database.
 
 `eng hook` queues the prompt in ~40 ms without blocking; the detached `eng check` worker
 reviews it via OpenRouter and writes the mistakes. `eng hook-stop` prints the feedback line
-at the end of the turn. If you use the wrapper, the commands are just `eng hook` / `eng hook-stop`.
+at the end of the turn — in opencode, where plugins cannot inject a system message, the
+feedback arrives as a desktop notification (`eng notify`).
 
 ## Commands
 
 | command | what it does |
 |---|---|
 | `eng open` / `eng serve` | web app / start the server (restart after frontend changes — the static files are embedded in the binary) |
+| `eng install` | scaffold a fresh clone, register Claude Code and opencode hooks, fish wrapper |
 | `eng status` | ripe topics, due cards, streaks |
 | `eng doctor` | health check of every backend |
 | `eng check [-retry]` | review queued prompts; retry failed ones |
@@ -119,6 +154,8 @@ at the end of the turn. If you use the wrapper, the commands are just `eng hook`
   "openrouter_model": "anthropic/claude-sonnet-5.5",
   "openrouter_env": "",                   // optional: a script that prints `export OPENROUTER_API=…`
   "language": "Russian",                  // the learner's native language: explanations are given in it
+  "prompt_style": false,                  // the prompt checker may also log style mistakes (wordiness, register)
+  "prompt_translation": false,            // each checked prompt gets a translation + "how it reads" line
   "private_roots": ["~/work"],            // project trees whose prompts never leave for OpenRouter
   "topics": [ /* id, categories, threshold, optional tokens */ ]
 ```
@@ -131,9 +168,14 @@ rules, taxonomy, and the CLI — stays in English. English is the fallback; `int
 holds the message packs (Russian and Spanish today, one struct per language to add more).
 
 - Prompts from `private_roots` are reviewed by `claude -p` locally instead of OpenRouter.
+- With `prompt_style` the checker also logs style mistakes (kind `style`); they count toward
+  the `style` topic like any other mistake. With `prompt_translation` the stop hook also shows
+  `🌐 eng: how it reads: … · translation: …`, and the translation is stored in the prompt
+  archive in `texts/`. Both flags are off by default: style is subjective, and the extra
+  output grows the per-prompt LLM answer.
 - Only the prompt text is queued — no pasted content, code, URLs or paths; the queue file
-  is deleted after the check. The archive keeps only sentences that contained mistakes;
-  names and hosts are replaced with `<…>`.
+  is deleted after the check. The archive keeps only sentences that contained mistakes
+  (plus the translation when `prompt_translation` is on); names and hosts are replaced with `<…>`.
 - The API key never goes into the repo: env vars, or an `openrouter_env` fetcher script.
 - Checking a prompt via OpenRouter costs about a cent; `claude -p` uses your subscription.
 

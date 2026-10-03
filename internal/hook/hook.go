@@ -160,11 +160,12 @@ func Check(ctx context.Context, s data.Store, cfg config.Config, c *coach.Coach,
 			seen = append(seen, normalize(e.Before))
 		}
 	}
-	if len(fresh) > 0 {
+	// translation is archived even when the prompt itself was clean.
+	if len(fresh) > 0 || (cfg.PromptTranslation && res.Translation != "") {
 		logged, _, err := logbook.Log(s, logbook.Input{
 			Date: q.TS[:10], Source: "prompt", Project: q.Project,
-			Original: res.Original, Corrected: res.Corrected, Errors: fresh,
-			Language: cfg.Language,
+			Original: res.Original, Corrected: res.Corrected, Translation: res.Translation,
+			Errors: fresh, Language: cfg.Language,
 		})
 		if err != nil {
 			return 0, backend, err
@@ -174,6 +175,9 @@ func Check(ctx context.Context, s data.Store, cfg config.Config, c *coach.Coach,
 			for i, l := range logged {
 				fb.Items = append(fb.Items, FeedbackItem{TS: now, Before: fresh[i].Before, After: fresh[i].After,
 					Kind: fresh[i].Kind, Category: l.Category, Rule: l.Rule, Count: l.Count})
+			}
+			if note, ok := perceptionNote(cfg, res.Translation, res.Perception); ok {
+				fb.Notes = append(fb.Notes, Note{TS: now, Text: note})
 			}
 		}); err != nil {
 			return len(fresh), backend, err
@@ -185,6 +189,20 @@ func Check(ctx context.Context, s data.Store, cfg config.Config, c *coach.Coach,
 		return len(fresh), backend, err
 	}
 	return len(fresh), backend, os.Remove(path)
+}
+
+// perceptionNote is the stop-hook line with the translation and how the prompt reads; ok is false when both are empty.
+func perceptionNote(cfg config.Config, translation, perception string) (string, bool) {
+	if translation == "" && perception == "" {
+		return "", false
+	}
+	if translation == "" {
+		translation = "—"
+	}
+	if perception == "" {
+		perception = "—"
+	}
+	return fmt.Sprintf(i18n.For(cfg.Language).PromptPerception, perception, translation), true
 }
 
 func clip(s string) string {

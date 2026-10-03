@@ -6,6 +6,8 @@
   "claude_model": "sonnet",
   "openrouter_model": "anthropic/claude-sonnet-5.5",
   "language": "Russian",
+  "prompt_style": true,
+  "prompt_translation": true,
   "private_roots": [],
   "topics": [
     {

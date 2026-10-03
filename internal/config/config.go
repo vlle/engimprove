@@ -27,15 +27,25 @@ type Config struct {
 	ReviewThreshold int    `json:"review_threshold"`
 	Notify          bool   `json:"notify"`
 	WhisperModel    string `json:"whisper_model"`
+	// WhisperBackend chooses who transcribes audio: "openrouter" or "local".
+	WhisperBackend string `json:"whisper_backend"`
+	// OpenRouterWhisperModel is the STT model slug when WhisperBackend is "openrouter".
+	OpenRouterWhisperModel string `json:"openrouter_whisper_model"`
 	// ClaudeModel is used by `claude -p` when OpenRouter is unavailable or the text is private.
 	ClaudeModel     string `json:"claude_model"`
 	OpenRouterEnv   string `json:"openrouter_env"`
 	OpenRouterModel string `json:"openrouter_model"`
 	// PrivateRoots are project trees whose prompts never leave for OpenRouter.
 	PrivateRoots []string `json:"private_roots"`
+	// ResumeRoot is a directory with the learner's resume and STAR stories.
+	ResumeRoot string `json:"resume_root"`
 	// Language is the learner's native language: the LLM explains in it.
 	Language string `json:"language"`
-	Topics   []Topic `json:"topics"`
+	// PromptStyle lets the prompt checker log style mistakes too.
+	PromptStyle bool `json:"prompt_style"`
+	// PromptTranslation adds a translation and a perception line to every prompt check.
+	PromptTranslation bool `json:"prompt_translation"`
+	Topics            []Topic `json:"topics"`
 }
 
 // Load reads config/eng.json and fills defaults for unset fields.
@@ -52,6 +62,12 @@ func Load(s data.Store) (Config, error) {
 	}
 	if cfg.WhisperModel == "" {
 		cfg.WhisperModel = "models/ggml-small.en.bin"
+	}
+	if cfg.WhisperBackend == "" {
+		cfg.WhisperBackend = "openrouter"
+	}
+	if cfg.OpenRouterWhisperModel == "" {
+		cfg.OpenRouterWhisperModel = "openai/whisper-large-v3"
 	}
 	if cfg.ClaudeModel == "" {
 		cfg.ClaudeModel = "sonnet"
@@ -105,4 +121,20 @@ func (c Config) Private(dir string) bool {
 // URL is the base address of the web app.
 func (c Config) URL() string {
 	return "http://" + c.Addr
+}
+
+// ResumeDir returns the absolute path to the resume directory, or "" if unset.
+func (c Config) ResumeDir() string {
+	if c.ResumeRoot == "" {
+		return ""
+	}
+	dir := c.ResumeRoot
+	if rest, ok := strings.CutPrefix(dir, "~/"); ok {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, rest)
+	}
+	return filepath.Clean(dir)
 }

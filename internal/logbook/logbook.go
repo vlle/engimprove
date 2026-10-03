@@ -32,6 +32,8 @@ type Input struct {
 	Source    string `json:"source,omitempty"`
 	Original  string `json:"original,omitempty"`
 	Corrected string `json:"corrected,omitempty"`
+	// Translation is the prompt rendered in the learner's language; archive-only.
+	Translation string `json:"translation,omitempty"`
 	// Language is the learner's language from the config; it heads the regenerated stats.
 	Language string     `json:"language,omitempty"`
 	Errors   []NewError `json:"errors"`
@@ -50,7 +52,7 @@ type Logged struct {
 
 // Log validates and appends a batch, archives the text and regenerates stats.md.
 func Log(s data.Store, in Input) ([]Logged, string, error) {
-	if len(in.Errors) == 0 {
+	if len(in.Errors) == 0 && in.Translation == "" {
 		return nil, "", fmt.Errorf("no errors to log")
 	}
 	if in.Date == "" {
@@ -131,7 +133,7 @@ func Log(s data.Store, in Input) ([]Logged, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	if in.Original != "" {
+	if in.Original != "" || in.Translation != "" {
 		if err := archive(s, in); err != nil {
 			return logged, in.TextID, fmt.Errorf("mistakes logged, archive failed: %w", err)
 		}
@@ -163,9 +165,15 @@ func archive(s data.Store, in Input) error {
 			strings.TrimPrefix(in.TextID, in.Date+"-"), in.Date, in.TextID,
 			strings.Trim(in.Source+" / "+in.Project, " /"))
 	}
-	fmt.Fprintf(&b, "\n### %s\n- original: %s\n", time.Now().Format("15:04"), oneLine(in.Original))
+	fmt.Fprintf(&b, "\n### %s\n", time.Now().Format("15:04"))
+	if in.Original != "" {
+		fmt.Fprintf(&b, "- original: %s\n", oneLine(in.Original))
+	}
 	if in.Corrected != "" {
 		fmt.Fprintf(&b, "- corrected: %s\n", oneLine(in.Corrected))
+	}
+	if in.Translation != "" {
+		fmt.Fprintf(&b, "- translation: %s\n", oneLine(in.Translation))
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {

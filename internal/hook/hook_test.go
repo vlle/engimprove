@@ -6,10 +6,26 @@ import (
 	"testing"
 	"time"
 
+	"engimprove/internal/config"
 	"engimprove/internal/data"
 	"engimprove/internal/testutil"
 	"engimprove/internal/topics"
 )
+
+func TestPerceptionNote(t *testing.T) {
+	cfg := config.Config{Language: "Russian"}
+	if _, ok := perceptionNote(cfg, "", ""); ok {
+		t.Fatal("empty result produced a note")
+	}
+	note, ok := perceptionNote(cfg, "сделай хук асинхронным", "звучит резко")
+	if !ok || note != "🌐 eng: как это читается: звучит резко · перевод: сделай хук асинхронным" {
+		t.Fatalf("note = %q, ok = %v", note, ok)
+	}
+	note, ok = perceptionNote(config.Config{}, "", "sounds curt")
+	if !ok || note != "🌐 eng: how it reads: sounds curt · translation: —" {
+		t.Fatalf("note = %q, ok = %v", note, ok)
+	}
+}
 
 func entry(id, before, after string) string {
 	return `{"id":"` + id + `","date":"2026-10-01","text_id":"t","kind":"grammar","category":"articles","rule":"r","before":"` +

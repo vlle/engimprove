@@ -67,3 +67,52 @@ func TestLogRejectsUnknownCategoryAndKindMismatch(t *testing.T) {
 		t.Fatal("kind mismatch accepted")
 	}
 }
+
+func TestLogArchivesTranslationWithoutErrors(t *testing.T) {
+	st, _ := testutil.Store(t, seed)
+	_, textID, err := Log(st, Input{
+		Date: "2026-10-01", Source: "prompt", Project: "project",
+		Translation: "сделай хук асинхронным",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if textID != "2026-10-01-prompts-project" {
+		t.Fatalf("text_id = %s", textID)
+	}
+	entries, err := st.Entries()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries = %+v, %v", entries, err)
+	}
+	archive, err := os.ReadFile(st.Path("texts", textID+".md"))
+	if err != nil || !strings.Contains(string(archive), "- translation: сделай хук асинхронным") {
+		t.Fatalf("archive = %q, %v", archive, err)
+	}
+}
+
+func TestLogArchivesTranslationWithErrors(t *testing.T) {
+	st, _ := testutil.Store(t)
+	_, textID, err := Log(st, Input{
+		Date: "2026-10-01", Source: "prompt", Project: "project",
+		Original: "make hook async", Corrected: "make the hook async",
+		Translation: "сделай хук асинхронным",
+		Errors: []NewError{
+			{Category: "articles", Rule: "missing definite article before a known referent", Before: "make hook", After: "make the hook"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := os.ReadFile(st.Path("texts", textID+".md"))
+	if err != nil || !strings.Contains(string(archive), "- translation:") ||
+		!strings.Contains(string(archive), "- corrected: make the hook async") {
+		t.Fatalf("archive = %q, %v", archive, err)
+	}
+}
+
+func TestLogWithoutErrorsOrTranslation(t *testing.T) {
+	st, _ := testutil.Store(t)
+	if _, _, err := Log(st, Input{TextID: "x"}); err == nil {
+		t.Fatal("empty input accepted")
+	}
+}

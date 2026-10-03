@@ -1,8 +1,10 @@
 package coach
 
 import (
+	"strings"
 	"testing"
 
+	"engimprove/internal/config"
 	"engimprove/internal/logbook"
 )
 
@@ -23,5 +25,31 @@ func TestKeepValidRefilesArticleFixes(t *testing.T) {
 	}
 	if out[1].Category != "prepositions" {
 		t.Fatalf("real preposition fix changed: %+v", out[1])
+	}
+}
+
+func TestPromptSchemaAndBlocksFollowFlags(t *testing.T) {
+	off := config.Config{Language: "Russian"}
+	on := off
+	on.PromptStyle, on.PromptTranslation = true, true
+
+	offSchema := promptSchema(off)
+	if strings.Contains(offSchema, `"style"`) || strings.Contains(offSchema, "translation") {
+		t.Fatalf("flags off but schema leaks them: %s", offSchema)
+	}
+	onSchema := promptSchema(on)
+	for _, want := range []string{`"style"`, `"translation"`, `"perception"`} {
+		if !strings.Contains(onSchema, want) {
+			t.Fatalf("schema misses %s: %s", want, onSchema)
+		}
+	}
+	if styleBlock(off) != "" || perceptionBlock(off) != "" {
+		t.Fatal("flag off but block is non-empty")
+	}
+	if style := styleBlock(on); !strings.Contains(style, "style:") {
+		t.Fatalf("style block = %q", style)
+	}
+	if block := perceptionBlock(on); !strings.Contains(block, "Russian") || !strings.Contains(block, "perception:") {
+		t.Fatalf("perception block = %q", block)
 	}
 }

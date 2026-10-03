@@ -3,10 +3,12 @@ package coach
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"engimprove/internal/cards"
+	"engimprove/internal/config"
 	"engimprove/internal/data"
 	"engimprove/internal/diff"
 	"engimprove/internal/logbook"
@@ -109,20 +111,27 @@ type PromptCheck struct {
 	Errors    []logbook.NewError `json:"errors"`
 	Original  string             `json:"original"`
 	Corrected string             `json:"corrected"`
+	// Translation is the message rendered in the learner's language, when enabled.
+	Translation string `json:"translation,omitempty"`
+	// Perception is one line on how a native reader takes the message, when enabled.
+	Perception string  `json:"perception,omitempty"`
+	Cost       float64 `json:"cost"`
 }
 
-var promptSchema = `{"type":"object","additionalProperties":false,"properties":{
-"errors":{"type":"array","items":` + fmt.Sprintf(errorItem, `"grammar","punctuation","lexical","spelling"`) + `},
-"original":{"type":"string"},"corrected":{"type":"string"}},
-"required":["errors","original","corrected"]}`
+var promptKinds = []string{"grammar", "punctuation", "lexical", "spelling"}
 
 // CheckPrompt finds mistakes worth learning from in a chat message to a coding assistant.
 func (c *Coach) CheckPrompt(ctx context.Context, s data.Store, text string, private bool) (PromptCheck, string, error) {
-	categories, tax, err := taxonomyBlock(s, "grammar", "punctuation", "lexical", "spelling")
+	kinds := kindsFor(c.cfg)
+	skip := []string{"style"}
+	if c.cfg.PromptStyle {
+		skip = nil
+	}
+	categories, tax, err := taxonomyBlock(s, kinds...)
 	if err != nil {
 		return PromptCheck{}, "", err
 	}
-	rules, err := rulesBlock(s, "style")
+	rules, err := rulesBlock(s, skip...)
 	if err != nil {
 		return PromptCheck{}, "", err
 	}
@@ -135,11 +144,11 @@ Log:
 - punctuation: commas, apostrophes, sentence-boundaries, hyphenation. Never capitalization.
 - lexical: calques from %[1]s, wrong collocations, false friends, wrong word.
 - spelling: only consistent misspellings (everytime, recieve) and homophone mix-ups (its/it's, then/than, lose/loose).
-
+%[2]s
 Chat register is NOT a mistake, never log it: lowercase sentence starts, lowercase "i", lowercase names
 (english, claude.md, kafka), a missing final period, abbreviations (u, pls, MR, PR, FF, llm), slang and swearing,
 finger typos (teh, adjacent keys, swapped letters). Missing articles inside short commands are still mistakes
-("make hook async" -> "make the hook async").
+("make hook async" -> "make the hook async"). This applies to style too: terse chat commands are fine.
 
 When in doubt, skip. If both variants are acceptable, it is not a mistake. Never invent mistakes.
 before/after: short fragments (3-10 words) quoted exactly from the text and corrected; one entry per mistake.
@@ -149,18 +158,21 @@ note: why, at most 12 words, in English.
 original: only the sentences that contain logged mistakes, verbatim, except that every person's name
 (e.g. "Petr" -> "<name>"), hostname, URL, token and ticket id is replaced. corrected: those same sentences,
 with the same replacements, and with the logged mistakes fixed.
-No mistakes: errors [], original "", corrected "".
+%[3]sNo mistakes: errors [], original "", corrected "".
 
-`, c.cfg.Language)
+`, c.cfg.Language, styleBlock(c.cfg), perceptionBlock(c.cfg))
 	b.WriteString(tax)
 	b.WriteString("\n")
 	b.WriteString(rules)
 	b.WriteString("\nMessage:\n<<<\n" + text + "\n>>>\n")
 
 	var out PromptCheck
-	backend, err := c.structured(ctx, private, "prompt_check", b.String(), promptSchema, &out)
+	backend, usage, err := c.structured(ctx, private, "prompt_check", b.String(), promptSchema(c.cfg), &out)
 	if err != nil {
 		return PromptCheck{}, "", err
+	}
+	if usage != nil {
+		out.Cost = usage.Cost
 	}
 	out.Errors = keepValid(categories, out.Errors, "capitalization")
 	if len(out.Errors) == 0 {
@@ -169,12 +181,55 @@ No mistakes: errors [], original "", corrected "".
 	return out, backend, nil
 }
 
+// styleBlock is the style section of the prompt check, empty when the flag is off.
+func styleBlock(cfg config.Config) string {
+	if !cfg.PromptStyle {
+		return ""
+	}
+	return `- style: wordiness, hedging, redundancy, register that a native reader would find off
+  (rude, abrupt, grovelling). Log one entry per clearly improvable phrase, not a rewrite.
+`
+}
+
+// perceptionBlock is the translation section of the prompt check, empty when the flag is off.
+func perceptionBlock(cfg config.Config) string {
+	if !cfg.PromptTranslation {
+		return ""
+	}
+	return fmt.Sprintf(`translation: the whole message rendered in %[1]s, keeping code, identifiers and names as they are;
+it shows him what he actually conveyed. Empty for trivial prompts ("continue", "ok").
+perception: one short line in %[1]s on how a native reader would take the message and its author:
+tone, politeness, directness. Base it on wording, not content. Empty for trivial prompts.
+`, cfg.Language)
+}
+
+func promptSchema(cfg config.Config) string {
+	props, required := `"original":{"type":"string"},"corrected":{"type":"string"}`,
+		`["errors","original","corrected"]`
+	if cfg.PromptTranslation {
+		props += `,"translation":{"type":"string"},"perception":{"type":"string"}`
+		required = `["errors","original","corrected","translation","perception"]`
+	}
+	return `{"type":"object","additionalProperties":false,"properties":{
+"errors":{"type":"array","items":` + fmt.Sprintf(errorItem, `"`+strings.Join(kindsFor(cfg), `","`)+`"`) + `},
+` + props + `},
+"required":` + required + `}`
+}
+
+func kindsFor(cfg config.Config) []string {
+	if cfg.PromptStyle {
+		return append(slices.Clone(promptKinds), "style")
+	}
+	return promptKinds
+}
+
 // SpeechReview is the verdict on one spoken answer.
 type SpeechReview struct {
 	Corrected string             `json:"corrected"`
 	Errors    []logbook.NewError `json:"errors"`
 	Tips      []string           `json:"tips"`
 	Fluency   string             `json:"fluency"`
+	Cost      float64            `json:"cost"`
 }
 
 var speechSchema = `{"type":"object","additionalProperties":false,"properties":{
@@ -185,7 +240,7 @@ var speechSchema = `{"type":"object","additionalProperties":false,"properties":{
 "required":["corrected","errors","tips","fluency"]}`
 
 // ReviewSpeech finds grammar and word-choice mistakes in a Whisper transcript.
-func (c *Coach) ReviewSpeech(ctx context.Context, s data.Store, question, transcript string) (SpeechReview, string, error) {
+func (c *Coach) ReviewSpeech(ctx context.Context, s data.Store, question, transcript, resumeContext string) (SpeechReview, string, error) {
 	categories, tax, err := taxonomyBlock(s, "grammar", "lexical", "style")
 	if err != nil {
 		return SpeechReview{}, "", err
@@ -211,14 +266,122 @@ Find his real grammar and word-choice mistakes. Rules:
 	b.WriteString(tax)
 	b.WriteString("\n")
 	b.WriteString(rules)
+	if resumeContext != "" && isAboutSpeaker(question) {
+		b.WriteString("\nThe speaker's verified background (use it to keep claims accurate and suggest concrete facts when the answer is vague):\n")
+		b.WriteString(resumeContext)
+	}
 	fmt.Fprintf(&b, "\nSpeaking prompt: %s\n\nTranscript:\n%s\n", question, transcript)
 
 	var out SpeechReview
-	backend, err := c.structured(ctx, false, "speech_review", b.String(), speechSchema, &out)
+	backend, usage, err := c.structured(ctx, false, "speech_review", b.String(), speechSchema, &out)
 	if err != nil {
 		return SpeechReview{}, "", err
 	}
+	if usage != nil {
+		out.Cost = usage.Cost
+	}
 	out.Errors = keepValid(categories, out.Errors)
+	return out, backend, nil
+}
+
+// isAboutSpeaker guesses whether a prompt asks the user to talk about themselves.
+func isAboutSpeaker(question string) bool {
+	q := strings.ToLower(question)
+	for _, phrase := range []string{
+		"tell me about yourself", "yourself", "your experience", "your background",
+		"your work", "you do", "you have solved", "you disagreed", "you made",
+		"why are you", "looking for", "yourself in two minutes", "job interview",
+		"about a time", "tell me about a time", "describe a time", "give an example",
+	} {
+		if strings.Contains(q, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// StarScore is one STAR dimension with a numeric score and feedback.
+type StarScore struct {
+	Score    int    `json:"score"`
+	Feedback string `json:"feedback"`
+}
+
+// InterviewReview is structured feedback on a behavioral interview answer.
+type InterviewReview struct {
+	STAR struct {
+		Situation StarScore `json:"situation"`
+		Task      StarScore `json:"task"`
+		Action    StarScore `json:"action"`
+		Result    StarScore `json:"result"`
+	} `json:"star"`
+	OverallScore int      `json:"overall_score"`
+	Rewrite      string   `json:"rewrite"`
+	FollowUps    []string `json:"follow_ups"`
+	Strengths    []string `json:"strengths"`
+	Gaps         []string `json:"gaps"`
+	StoryMatch   string   `json:"story_match"`
+	Cost         float64  `json:"cost"`
+}
+
+var interviewSchema = `{"type":"object","additionalProperties":false,"properties":{
+"star":{"type":"object","additionalProperties":false,"properties":{
+  "situation":{"type":"object","additionalProperties":false,"properties":{"score":{"type":"integer","minimum":1,"maximum":5},"feedback":{"type":"string"}},"required":["score","feedback"]},
+  "task":{"type":"object","additionalProperties":false,"properties":{"score":{"type":"integer","minimum":1,"maximum":5},"feedback":{"type":"string"}},"required":["score","feedback"]},
+  "action":{"type":"object","additionalProperties":false,"properties":{"score":{"type":"integer","minimum":1,"maximum":5},"feedback":{"type":"string"}},"required":["score","feedback"]},
+  "result":{"type":"object","additionalProperties":false,"properties":{"score":{"type":"integer","minimum":1,"maximum":5},"feedback":{"type":"string"}},"required":["score","feedback"]}
+},"required":["situation","task","action","result"]},
+"overall_score":{"type":"integer","minimum":1,"maximum":5},
+"rewrite":{"type":"string"},
+"follow_ups":{"type":"array","items":{"type":"string"}},
+"strengths":{"type":"array","items":{"type":"string"}},
+"gaps":{"type":"array","items":{"type":"string"}},
+"story_match":{"type":"string"}},
+"required":["star","overall_score","rewrite","follow_ups","strengths","gaps","story_match"]}`
+
+// ReviewInterview evaluates a spoken behavioral answer against the STAR method.
+func (c *Coach) ReviewInterview(ctx context.Context, s data.Store, question, transcript, resumeContext string) (InterviewReview, string, error) {
+	_, tax, err := taxonomyBlock(s, "grammar", "lexical", "style")
+	if err != nil {
+		return InterviewReview{}, "", err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, `You are an interview coach for a %[1]s-speaking software engineer (B1-B2) applying to backend roles.
+He answered a behavioral interview question out loud; the text is a Whisper transcript.
+Evaluate the answer using the Amazon STAR method (Situation, Task, Action, Result).
+
+Rules:
+- Ignore punctuation, capitalization and spelling from the transcriber.
+- Ignore fillers (um, uh, like, you know), false starts and self-corrections.
+- Do not invent facts. If the answer contradicts the verified background below, flag it.
+- Grammar mistakes are secondary here; focus on structure, content and impact.
+
+Output:
+- star.situation/task/action/result: score 1-5 and one-sentence feedback each.
+- overall_score: 1-5.
+- rewrite: a tighter, natural version of the same answer in 60-120 words.
+- follow_ups: 2 likely follow-up questions an interviewer would ask.
+- strengths: 2-3 things the answer did well.
+- gaps: 2-3 missing or weak parts.
+- story_match: which of the verified stories below fits this question, or "none".
+
+`, c.cfg.Language)
+	b.WriteString(tax)
+	b.WriteString("\n")
+	if resumeContext != "" {
+		b.WriteString("Verified background (resume + STAR stories):\n")
+		b.WriteString(resumeContext)
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Interview question: %s\n\nTranscript:\n%s\n", question, transcript)
+
+	var out InterviewReview
+	backend, usage, err := c.structured(ctx, false, "interview_review", b.String(), interviewSchema, &out)
+	if err != nil {
+		return InterviewReview{}, "", err
+	}
+	if usage != nil {
+		out.Cost = usage.Cost
+	}
 	return out, backend, nil
 }
 
@@ -258,7 +421,7 @@ His mistakes (before → after · rule):
 	var out struct {
 		Items []cards.PackItem `json:"items"`
 	}
-	if _, err := c.structured(ctx, false, "exercise_pack", b.String(), packSchema, &out); err != nil {
+	if _, _, err := c.structured(ctx, false, "exercise_pack", b.String(), packSchema, &out); err != nil {
 		return nil, err
 	}
 	var keep []cards.PackItem
