@@ -24,6 +24,29 @@ The idea: you already write English all day. Instead of a separate study session
 you actually make become the study material, with spaced repetition (Leitner intervals)
 deciding what to review and when.
 
+## Quick install via your agent
+
+No time for the manual steps? Copy this prompt into your agent — it performs the whole install
+and reports back:
+
+```text
+Install engimprove, an English-learning machine for me. Use the engimprove checkout we are
+working in, or clone git@github.com:vlle/engimprove.git if there is none (Go 1.22+ required).
+
+1. go build -o bin/eng ./cmd/eng && go test ./...
+2. Run bin/eng install. It scaffolds missing data files and registers hooks for Claude Code
+   and opencode idempotently; show me its output and fix anything it reports.
+3. Ask me for my OpenRouter API key and my native language; set "language" in config/eng.json
+   to that language.
+4. Run bin/eng doctor and bin/eng status and tell me what still needs my hand.
+5. If your agent has no hook surface (e.g. Codex), read the "Agent integration" section of
+   README.md and say which manual step you would take; the Check tab of bin/eng open is the
+   universal fallback.
+
+Do not hand-edit state/, errors/ or texts/: the mistake database is append-only and written
+only through bin/eng log. Finish with a short summary of what was installed and what is left.
+```
+
 ## How it works
 
 ```
@@ -87,27 +110,6 @@ end
 ```
 
 ### Agent integration
-
-No time for the manual steps? Copy this prompt into your agent — it performs the whole install
-and reports back:
-
-```text
-Install engimprove, an English-learning machine for me. Use the engimprove checkout we are
-working in, or clone git@github.com:vlle/engimprove.git if there is none (Go 1.22+ required).
-
-1. go build -o bin/eng ./cmd/eng && go test ./...
-2. Run bin/eng install. It scaffolds missing data files and registers hooks for Claude Code
-   and opencode idempotently; show me its output and fix anything it reports.
-3. Ask me for my OpenRouter API key and my native language; set "language" in config/eng.json
-   to that language.
-4. Run bin/eng doctor and bin/eng status and tell me what still needs my hand.
-5. If your agent has no hook surface (e.g. Codex), read the "Agent integration" section of
-   README.md and say which manual step you would take; the Check tab of bin/eng open is the
-   universal fallback.
-
-Do not hand-edit state/, errors/ or texts/: the mistake database is append-only and written
-only through bin/eng log. Finish with a short summary of what was installed and what is left.
-```
 
 The machine catches prompts through two touchpoints, expressed per agent:
 
