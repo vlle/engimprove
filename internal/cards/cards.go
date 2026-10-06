@@ -411,6 +411,39 @@ func CountDue(all []Card, srs SRS, now time.Time) int {
 	return n
 }
 
+// Boxes counts seen cards per Leitner box, from the 10-minute box up.
+func Boxes(all []Card, srs SRS) []int {
+	out := make([]int, len(intervals))
+	for _, c := range all {
+		if st := srs[c.ID]; st.Seen > 0 {
+			out[min(max(st.Box, 0), len(out)-1)]++
+		}
+	}
+	return out
+}
+
+// NextDue returns the earliest review time still ahead, or "" when nothing waits.
+func NextDue(all []Card, srs SRS, now time.Time) string {
+	var next time.Time
+	for _, c := range all {
+		st := srs[c.ID]
+		if st.Seen == 0 {
+			continue
+		}
+		due, err := time.Parse(time.RFC3339, st.Due)
+		if err != nil || !due.After(now) {
+			continue
+		}
+		if next.IsZero() || due.Before(next) {
+			next = due
+		}
+	}
+	if next.IsZero() {
+		return ""
+	}
+	return next.Format(time.RFC3339)
+}
+
 // Answer is one graded attempt in state/answers.jsonl.
 type Answer struct {
 	TS     string   `json:"ts"`

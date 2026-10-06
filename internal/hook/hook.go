@@ -50,11 +50,12 @@ type Queued struct {
 
 // CheckLog is one finished prompt check; the weekly mistake rate is computed from these alone.
 type CheckLog struct {
-	TS       string `json:"ts"`
-	Project  string `json:"project"`
-	Words    int    `json:"words"`
-	Mistakes int    `json:"mistakes"`
-	Backend  string `json:"backend"`
+	TS       string  `json:"ts"`
+	Project  string  `json:"project"`
+	Words    int     `json:"words"`
+	Mistakes int     `json:"mistakes"`
+	Backend  string  `json:"backend"`
+	Cost     float64 `json:"cost,omitempty"`
 }
 
 // Prompt records the prompt size and queues English prompts; it returns the queue file, or "" to skip.
@@ -184,7 +185,7 @@ func Check(ctx context.Context, s data.Store, cfg config.Config, c *coach.Coach,
 		}
 	}
 	if err := data.AppendJSONL(s.Path("state", "checks.jsonl"), CheckLog{
-		TS: q.TS, Project: q.Project, Words: q.Words, Mistakes: len(fresh), Backend: backend,
+		TS: q.TS, Project: q.Project, Words: q.Words, Mistakes: len(fresh), Backend: backend, Cost: res.Cost,
 	}); err != nil {
 		return len(fresh), backend, err
 	}

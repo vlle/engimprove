@@ -4,28 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>eng — your English, corrected</title>
-  <meta name="color-scheme" content="light dark">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231F6FD1'/%3E%3Cpath d='M8 23 16 9l8 14' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,560;1,7..72,400&display=swap" rel="stylesheet">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0B0B0C">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23FFCC00'/%3E%3Cpath d='M8 16h15m-6-6 6 6-6 6' fill='none' stroke='%230B0B0C' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/fira-sans-500.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/literata.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
   <header class="bar">
-    <a class="mark" href="#/" aria-label="eng, today">eng<span aria-hidden="true">‸</span></a>
-    <nav aria-label="Sections">
-      <a href="#/" data-nav="today">Today</a>
-      <a href="#/review" data-nav="review">Review</a>
-      <a href="#/speak" data-nav="speak">Speak</a>
-      <a href="#/work" data-nav="work">Work English</a>
-      <a href="#/check" data-nav="check">Check</a>
-      <a href="#/mistakes" data-nav="mistakes">Mistakes</a>
-      <a href="#/lessons" data-nav="lessons">Lessons</a>
-    </nav>
-    <span id="version" class="version" aria-label="build version"></span>
+    <div class="bar-in">
+      <a class="mark" href="#/" aria-label="eng, today">eng<span aria-hidden="true">‸</span></a>
+      <nav aria-label="Sections">
+        <a href="#/" data-nav="today">Today</a>
+        <a href="#/review" data-nav="review">Review</a>
+        <a href="#/speak" data-nav="speak">Speak</a>
+        <a href="#/work" data-nav="work">Work English</a>
+        <a href="#/check" data-nav="check">Check</a>
+        <a href="#/mistakes" data-nav="mistakes">Mistakes</a>
+        <a href="#/lessons" data-nav="lessons">Lessons</a>
+      </nav>
+      <p class="health" id="health" aria-label="Backends and spend"></p>
+    </div>
   </header>
   <main id="view" tabindex="-1"></main>
+  <footer class="foot"><span id="version" class="version" aria-label="build version"></span></footer>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>

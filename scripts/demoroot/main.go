@@ -102,6 +102,7 @@ func copyBase(repo, out string) error {
 		{"errors/taxonomy.md", "errors/taxonomy.md"},
 		{"content/lessons.json", "content/lessons.json"},
 		{"content/speaking.json", "content/speaking.json"},
+		{"content/work-english.json", "content/work-english.json"},
 	}
 	for _, p := range pairs {
 		if err := copyFile(filepath.Join(repo, p[0]), filepath.Join(out, p[1])); err != nil {

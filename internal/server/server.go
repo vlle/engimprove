@@ -211,6 +211,10 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"topics":    topics.Statuses(s.Config, snap.entries, snap.sessions),
 		"due":       cards.CountDue(snap.cards, snap.srs, now),
+		"boxes":     cards.Boxes(snap.cards, snap.srs),
+		"next_due":  cards.NextDue(snap.cards, snap.srs, now),
+		"failed":    failedChecks(s.Store),
+		"week_cost": weekSpend(checks, recs, now),
 		"cards":     len(snap.cards),
 		"unseen":    unseen,
 		"totals":    map[string]int{"mistakes": len(snap.entries), "texts": len(texts), "rules": len(rules), "prompts": len(prompts)},
@@ -225,6 +229,42 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"version":   buildinfo.Read(),
 		"url":       s.Config.URL(),
 	})
+}
+
+// weekSpend sums LLM cost since Monday: prompt checks plus speech.
+func weekSpend(checks []hook.CheckLog, recs []speak.Recording, now time.Time) float64 {
+	start := weekStart(now)
+	inWeek := func(ts string) bool {
+		t, err := time.Parse(time.RFC3339, ts)
+		return err == nil && !t.Before(start)
+	}
+	total := 0.0
+	for _, c := range checks {
+		if inWeek(c.TS) {
+			total += c.Cost
+		}
+	}
+	for _, r := range recs {
+		if inWeek(r.TS) {
+			total += r.WhisperCost + r.ReviewCost
+		}
+	}
+	return total
+}
+
+// failedChecks counts queued prompts whose background check gave up.
+func failedChecks(s data.Store) int {
+	files, err := os.ReadDir(s.Path("state", "queue", "failed"))
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".json") {
+			n++
+		}
+	}
+	return n
 }
 
 func weekStart(t time.Time) time.Time {
@@ -700,20 +740,22 @@ func (s *Server) speakReview(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusBadGateway, err)
 			return
 		}
-		rec, err = speak.ApplyInterview(s.Store, rec, review, backend)
+		if rec, err = speak.ApplyInterview(s.Store, rec, review, backend); err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
 	case "grammar":
 		review, backend, err := s.Coach.ReviewSpeech(r.Context(), s.Store, rec.Prompt, rec.Transcript, resumeContext)
 		if err != nil {
 			fail(w, http.StatusBadGateway, err)
 			return
 		}
-		rec, err = speak.Apply(s.Store, rec, review, backend)
+		if rec, err = speak.Apply(s.Store, rec, review, backend); err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
 	default:
 		fail(w, http.StatusBadRequest, errors.New("unknown review mode: "+mode))
-		return
-	}
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, rec)

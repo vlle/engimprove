@@ -100,30 +100,57 @@ function renderDiff(before, after, animate = false) {
   return html.join(" ");
 }
 
-/* ---------- tally marks: fresh mistakes against the firing point ---------- */
+/* ---------- signage: pictograms, the sign, signposts ---------- */
 
-function tally(n, threshold) {
-  const step = 6, gap = 10, group = 3 * step + gap + 6;
-  const shown = Math.min(n, 25);
-  const span = Math.max(shown, threshold);
-  const width = Math.ceil(span / 5) * group + 24;
-  const lines = [];
-  for (let k = 0; k < shown; k++) {
-    const g = Math.floor(k / 5), j = k % 5;
-    const gx = 4 + g * group;
-    if (j < 4) {
-      const wob = (((k * 37) % 5) - 2) * 0.3;
-      lines.push(`<line x1="${gx + j * step + wob}" y1="3" x2="${gx + j * step - wob}" y2="19"/>`);
-    } else {
-      lines.push(`<line x1="${gx - 3}" y1="16" x2="${gx + 3 * step + 3}" y2="6"/>`);
-    }
-  }
-  const tg = Math.floor((threshold - 1) / 5), tj = (threshold - 1) % 5;
-  const notchX = tj === 4 ? 4 + tg * group + 3 * step + gap / 2 + 3 : 4 + tg * group + tj * step + step / 2;
-  const more = n > shown ? `<text x="${4 + Math.ceil(shown / 5) * group}" y="16" class="more">+${n - shown}</text>` : "";
-  return `<svg class="tally" viewBox="0 0 ${width} 22" width="${width}" role="img" aria-label="${n} new mistakes, drill starts at ${threshold}">
-    ${lines.join("")}<line class="notch" x1="${notchX}" y1="0" x2="${notchX}" y2="22"/>${more}</svg>`;
+const PICTO = {
+  arrow: `<path d="M4.5 12h15M13.5 6l6 6-6 6"/>`,
+  cards: `<rect x="3.5" y="7" width="13" height="13" rx="1.5"/><path d="M8 3.5h11a1.5 1.5 0 0 1 1.5 1.5v11"/>`,
+  doc: `<path d="M6 3h8.5L19 7.5V21H6z"/><path d="M14 3v5h5M9.5 12.5h6M9.5 16.5h6"/>`,
+  letter: `<path d="M5.5 19.5 12 4.5l6.5 15M8 14h8"/>`,
+  turn: `<path d="M6 4v7a4 4 0 0 0 4 4h9M15 11l4 4-4 4"/>`,
+  clock: `<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>`,
+  list: `<path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/>`,
+  comma: `<circle cx="12" cy="9" r="2.2"/><path d="M14.2 9.5c0 3.5-1.8 6.5-5 8"/>`,
+  chat: `<path d="M4 5h16v11H10l-5 4v-4H4z"/>`,
+  pen: `<path d="m4 20 1-4.5L16 4.5l3.5 3.5L8.5 19z"/><path d="m13.5 7 3.5 3.5"/>`,
+  mic: `<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>`,
+  person: `<circle cx="12" cy="7.5" r="3.5"/><path d="M5 20.5a7 7 0 0 1 14 0"/>`,
+  alert: `<path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/>`,
+  check: `<path d="m5 12.5 4.5 4.5L19 7"/>`,
+  help: `<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8h.01"/>`,
+  book: `<path d="M12 6.5C10 5 7 4.6 3.5 5v13.5c3.5-.4 6.5 0 8.5 1.5 2-1.5 5-1.9 8.5-1.5V5c-3.5-.4-6.5 0-8.5 1.5z"/><path d="M12 6.5V20"/>`,
+  gear: `<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>`,
+  sort: `<path d="M8 5v14M4.5 15.5 8 19l3.5-3.5M16 19V5M12.5 8.5 16 5l3.5 3.5"/>`,
+  swap: `<path d="M4 8h14M14.5 4.5 18 8l-3.5 3.5M20 16H6M9.5 12.5 6 16l3.5 3.5"/>`,
+  spell: `<path d="M5 6.5h14M5 11h9"/><path d="M4 17.5c1.3-1.4 2.7-1.4 4 0s2.7 1.4 4 0 2.7-1.4 4 0 2.7 1.4 4 0"/>`,
+  case: `<rect x="3.5" y="7.5" width="17" height="12" rx="1.5"/><path d="M9 7.5v-2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M3.5 12.5h17"/>`,
+  layers: `<path d="M12 3.5 20.5 8 12 12.5 3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5"/>`,
+  send: `<path d="M20.5 3.5 3.5 10.5l7 3 3 7z"/><path d="m10.5 13.5 10-10"/>`,
+};
+const picto = (name) => `<svg class="picto" viewBox="0 0 24 24" aria-hidden="true">${PICTO[name] || PICTO.arrow}</svg>`;
+
+const TOPIC_PICTO = { the: "doc", "a-an": "letter", prepositions: "turn", verbs: "clock", structure: "list", punctuation: "comma", lexis: "swap", style: "pen", spelling: "spell" };
+const WORK_PICTO = { standup: "person", "code-review": "chat", incident: "alert", architecture: "layers", interview: "case" };
+const topicPicto = (id) => TOPIC_PICTO[id] || "doc";
+
+// title and sub arrive as markup; callers escape anything the learner wrote.
+// the glyph is always the arrow; only an answered card swaps it for its verdict.
+function sign({ picto: p = "arrow", title, sub = "", figure = "", label = "", action = "", extra = "", long = false, flip = false }) {
+  return `<section class="sign${long ? " long" : ""}${flip ? " flip" : ""}">
+    <span class="tile">${picto(p)}</span>
+    <div class="sign-text"><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ""}</div>
+    ${figure !== "" ? `<p class="sign-figure"><b>${figure}</b>${label ? `<span>${label}</span>` : ""}</p>` : ""}
+    ${action ? `<div class="sign-action">${action}</div>` : ""}
+    ${extra}
+  </section>`;
 }
+
+const post = ({ href, picto: p, title, sub = "", quiet = false, current = false }) =>
+  `<a class="post${quiet ? " quiet" : ""}" href="${href}"${current ? ' aria-current="page"' : ""}>
+    <span class="tile">${picto(p)}</span>
+    <span class="post-text"><b>${title}</b>${sub ? `<span>${sub}</span>` : ""}</span>
+    <span class="edge">${picto("arrow")}</span>
+  </a>`;
 
 /* ---------- speech synthesis for hearing the right version ---------- */
 
@@ -159,12 +186,46 @@ async function getStatus() {
     const el = document.getElementById("version");
     if (el) el.textContent = [v.commit, v.time, v.dirty ? "dirty" : ""].filter(Boolean).join(" · ");
   }
+  renderHealth(cache.status);
   return cache.status;
 }
+
+function renderHealth(st) {
+  const el = document.getElementById("health");
+  if (!el || !st) return;
+  const item = (ok, label, title = label) => `<span title="${esc(title)}"><i class="${ok ? "" : "off"}"></i>${esc(label)}</span>`;
+  const whisperOk = st.whisper?.openrouter_ok || st.whisper?.local_ready;
+  const backend = st.llm?.backend || "";
+  el.innerHTML =
+    item(st.llm?.ok, st.llm?.ok ? backend.split(" ")[0] || "reviewer" : "no reviewer", backend || "no reviewer") +
+    item(whisperOk, "whisper") +
+    `<span title="LLM spend since Monday: prompt checks and speech">$${(st.week_cost || 0).toFixed(2)} this week</span>`;
+}
+
 const topicTitle = (id) => cache.status?.topics.find((t) => t.id === id)?.title || id;
 const when = (iso) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "");
 const dayOf = (date) => new Date(date + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 const times = (n) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
+const nth = (n) => `${n}${[11, 12, 13].includes(n % 100) ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th"}`;
+const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+const reviewMinutes = (cards) => Math.max(1, Math.round(cards * 0.5));
+
+function nextAt(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${when(iso)}, ${time}`;
+}
+
+// the text archive id says where a mistake was caught.
+function sourceOf(textId = "") {
+  if (/-prompts(-|$)/.test(textId)) return { short: "prompt", long: "from a prompt" };
+  if (/-speaking(-|$)/.test(textId)) return { short: "speech", long: "from a spoken answer" };
+  if (textId.includes("-web-")) return { short: "check", long: "from a checked text" };
+  return { short: "text", long: "from a text" };
+}
+
+const BOXES = ["10 min", "1 day", "3 days", "7 days", "21 days", "60 days"];
 
 /* ---------- today ---------- */
 
@@ -178,99 +239,180 @@ function pickHero(status, mistakes) {
   return e ? { entry: e, rule: { rule: e.rule, count: 1, last: e.date } } : null;
 }
 
-async function today() {
-  const [st, mistakes] = await Promise.all([getStatus(), getMistakes(true)]);
-  const hero = pickHero(st, mistakes);
-  const ready = st.topics.filter((t) => t.ready);
-  const heroTopic = hero?.entry.topics[0];
-
-  const heroActions = hero
-    ? `<div class="actions">
-            <a class="button primary" href="#/drill/${esc(heroTopic)}">Practise ${esc(topicTitle(heroTopic))}</a>
-            ${st.due ? `<a class="button" href="#/review">Review ${st.due} due</a>` : ""}
-            <button class="button" data-cheer>Cheer me up</button>
-          </div>`
-    : `<div class="actions"><button class="button" data-cheer>Cheer me up</button></div>`;
-
-  const heroHTML = hero
-    ? `<section class="leaf">
-        <div class="text">
-          <p class="sentence hero">${renderDiff(hero.entry.before, hero.entry.after, true)}</p>
-          ${heroActions}
-        </div>
-        <aside class="note">
-          <strong>${esc(hero.rule.rule)}</strong>
-          <p>You have made this mistake ${times(hero.rule.count)}, most recently on ${dayOf(hero.rule.last)}.</p>
-          ${hero.entry.note ? `<p>${esc(hero.entry.note)}</p>` : ""}
-        </aside>
-      </section>`
-    : `<section class="leaf"><div class="text"><p class="sentence hero">Write to Claude in English and your corrections will show up here.</p></div></section>`;
-
-  const rows = st.topics
+function rateChart(weeks) {
+  const pts = weeks.filter((w) => w.words > 0);
+  if (pts.length < 2) {
+    return pts.length
+      ? `<p class="muted">${pts[0].rate.toFixed(1)} this week. The line starts after a second week of checked prompts.</p>`
+      : `<p class="muted">This fills in as you write English prompts. It counts per week, so it drops as your English improves.</p>`;
+  }
+  const W = 520, H = 180, l = 28, r = 28, t = 30, b = 30;
+  const top = Math.max(...pts.map((p) => p.rate)) * 1.15 || 1;
+  const x = (i) => l + (i * (W - l - r)) / (pts.length - 1);
+  const y = (v) => t + (1 - v / top) * (H - t - b);
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.rate).toFixed(1)}`).join(" ");
+  const marks = pts
     .map(
-      (t) => `<li class="topic${t.ready ? " ready" : ""}">
-        <div><div class="name">${esc(t.title)}</div>
-          <div class="count">${t.fresh} new since ${t.drills ? "your last drill" : "you started"}, fires at ${t.threshold}</div></div>
-        <div class="marks">${tally(t.fresh, t.threshold)}</div>
-        <a class="button${t.ready ? " primary" : ""}" href="#/drill/${esc(t.id)}">${t.ready ? "Start" : "Practise"}</a>
-      </li>`
+      (p, i) => `<circle class="pt" cx="${x(i).toFixed(1)}" cy="${y(p.rate).toFixed(1)}" r="4.5"><title>${p.week}: ${p.rate.toFixed(1)} per 100 words over ${p.words} words</title></circle>
+        <text x="${x(i).toFixed(1)}" y="${(y(p.rate) - 13).toFixed(1)}" text-anchor="middle">${p.rate.toFixed(1)}</text>
+        <text class="axis" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${dayOf(p.start)}</text>`
     )
     .join("");
+  return `<svg class="rate-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mistakes per 100 checked words, by week">
+      <line class="base" x1="${l}" x2="${W - r}" y1="${H - b}" y2="${H - b}"/>
+      <path class="area" d="${path} L${x(pts.length - 1).toFixed(1)} ${H - b} L${x(0).toFixed(1)} ${H - b} Z"/>
+      <path class="line" d="${path}"/>${marks}</svg>`;
+}
 
-  const weeks = st.weeks.filter((w) => w.words > 0 || w.answers > 0);
-  const maxRate = Math.max(1, ...st.weeks.map((w) => w.rate));
-  const bars = st.weeks
-    .map((w, i) => {
-      const h = w.words ? Math.max(2, (w.rate / maxRate) * 78) : 2;
-      return `<rect class="${w.words ? "bar-rate" : "bar-empty"}" x="${i * 44 + 8}" y="${100 - h}" width="28" height="${h}" rx="3">
-          <title>${w.week}: ${w.words ? `${w.rate.toFixed(1)} mistakes per 100 words over ${w.words} words` : "no checked prompts"}</title></rect>
-        <text x="${i * 44 + 22}" y="118" text-anchor="middle">${dayOf(w.start)}</text>
-        ${w.words ? `<text x="${i * 44 + 22}" y="${95 - h}" text-anchor="middle">${w.rate.toFixed(1)}</text>` : ""}`;
-    })
-    .join("");
+function rateFigures(st) {
+  const pts = st.weeks.filter((w) => w.words > 0);
+  const first = pts[0]?.rate, last = pts[pts.length - 1]?.rate;
+  const change = pts.length > 1 && first ? Math.round(((last - first) / first) * 100) : null;
+  const answers = st.weeks.reduce((n, w) => n + w.answers, 0);
+  const right = st.weeks.reduce((n, w) => n + w.accuracy * w.answers, 0);
+  return `<div class="figures">
+      <div><b>${change === null ? "—" : `${change > 0 ? "+" : change < 0 ? "−" : "±"}${Math.abs(change)}%`}</b>${change === null ? "rate change" : `in ${plural(pts.length, "week")}`}</div>
+      <div><b>${st.streak}</b>${st.streak === 1 ? "day in a row" : "days in a row"}</div>
+      <div><b>${answers ? `${Math.round((right / answers) * 100)}%` : "—"}</b>drill accuracy</div>
+    </div>`;
+}
 
-  const speaking = st.speaking.tools.ready
-    ? `<p>Answer a question out loud; Whisper writes it down and the grammar check marks what to fix.</p>`
-    : `<p>Speaking needs ${esc(st.speaking.tools.missing)}.</p>`;
+function firstRun(st) {
+  const whisperOk = st.whisper?.openrouter_ok || st.whisper?.local_ready;
+  const step = (n, text) => `<li><b>${n}</b>${text}</li>`;
+  const arrow = `<li aria-hidden="true">${picto("arrow")}</li>`;
+  const check = (ok, title, sub) =>
+    `<li class="${ok ? "ok" : "warn"}"><span class="tile">${picto(ok ? "check" : "alert")}</span><div><b>${title}</b><div class="muted">${sub}</div></div></li>`;
+  view.innerHTML = `
+    ${sign({
+      title: "Start here",
+      extra: `<ol class="route" aria-label="Three steps">${step(1, "Install the hooks")}${arrow}${step(2, "Write a prompt in English")}${arrow}${step(3, "Come back for your first drill")}</ol>`,
+    })}
+    <div class="duo">
+      <section class="panel">
+        <h2>Setup</h2>
+        <ul class="checklist">
+          ${check(st.llm.ok, st.llm.ok ? `Reviewer ready: ${esc(st.llm.backend)}` : "No reviewer yet", st.llm.ok ? "Each English prompt is checked in the background." : "Set OPENROUTER_API_KEY or install the claude CLI.")}
+          ${check(whisperOk, whisperOk ? "Speech to text ready" : "Speech to text not set up", whisperOk ? "Speak is ready to record." : "Run <code>eng whisper-setup</code> to use Speak.")}
+          <li><span class="tile">${picto("gear")}</span><div><b>Agent hooks</b><div class="muted">Run <code>eng install</code> once; <code>eng doctor</code> shows what is still missing.</div></div></li>
+        </ul>
+      </section>
+      <div class="posts stack">
+        ${post({ href: "#/check", picto: "send", title: "No agent hooks? Paste English into Check", sub: "Same review, same mistake database" })}
+        ${post({ href: "#/work", picto: "chat", title: "Practise work English", sub: "Stand-ups, code review, interviews" })}
+        ${post({ href: "#/lessons", picto: "book", title: "Read the lessons", sub: "Articles, prepositions, verb forms and more" })}
+      </div>
+    </div>`;
+}
+
+async function today() {
+  const [st, mistakes] = await Promise.all([getStatus(), getMistakes(true)]);
+  if (!st.totals.mistakes) return firstRun(st);
+  const hero = pickHero(st, mistakes);
+  const heroTopic = hero?.entry.topics[0];
+  const ripe = st.topics.filter((t) => t.ready).sort((a, b) => b.fresh - a.fresh);
+  const waiting = st.topics.filter((t) => !t.ready && t.fresh > 0).sort((a, b) => b.fresh / b.threshold - a.fresh / a.threshold);
+
+  let next, posts;
+  if (st.due) {
+    next = "#/review";
+    posts = ripe.slice(0, 3);
+  } else if (ripe.length) {
+    next = `#/drill/${ripe[0].id}`;
+    posts = ripe.slice(1, 4);
+  } else {
+    next = "#/check";
+    posts = [];
+  }
+  posts = [...posts, ...waiting].slice(0, 4);
+
+  const signHTML = st.due
+    ? sign({
+        title: "Review",
+        sub: `${plural(st.due, "due card")} · about ${reviewMinutes(st.due)} min`,
+        figure: st.due,
+        label: "due now",
+        action: `<a class="button primary" href="#/review">Start review <kbd>↵</kbd></a>`,
+      })
+    : ripe.length
+      ? sign({
+          title: `Practise ${esc(ripe[0].title)}`,
+          sub: `mistakes since ${ripe[0].drills ? "your last drill" : "you started"} · ripe at ${ripe[0].threshold}`,
+          figure: ripe[0].fresh,
+          label: "new",
+          action: `<a class="button primary" href="#/drill/${esc(ripe[0].id)}">Start <kbd>↵</kbd></a>`,
+        })
+      : sign({
+          title: "Nothing is due",
+          sub: st.next_due ? `Next review at ${nextAt(st.next_due)}` : "New cards arrive as you write English",
+          action: `<a class="button primary" href="#/check">Check a text <kbd>↵</kbd></a>`,
+        });
+
+  const postsHTML = posts.length
+    ? `<nav class="posts" aria-label="Topics">${posts
+        .map((t) =>
+          post({
+            href: `#/drill/${esc(t.id)}`,
+            picto: topicPicto(t.id),
+            title: t.ready ? `Ripe: ${esc(t.title)}` : esc(t.title),
+            sub: t.ready ? `${t.fresh} new${t.drills ? " since last drill" : ""}` : `${t.fresh} of ${t.threshold} · open to practise now`,
+            quiet: !t.ready,
+          })
+        )
+        .join("")}</nav>`
+    : "";
+
+  const heroHTML = hero
+    ? `<section class="panel">
+        <h2>Last caught</h2>
+        <div class="paper"><p class="sentence hero">${renderDiff(hero.entry.before, hero.entry.after)}</p></div>
+        <p class="meta">${esc(hero.rule.rule)} · ${nth(hero.rule.count)} time · last on ${dayOf(hero.rule.last)} · ${sourceOf(hero.entry.text_id).long}</p>
+        ${hero.entry.note ? `<p class="meta">${esc(hero.entry.note)}</p>` : ""}
+        <div class="actions">
+          ${heroTopic ? `<a class="button" href="#/drill/${esc(heroTopic)}">Practise ${esc(topicTitle(heroTopic))}</a>` : ""}
+          <button class="button" data-cheer>Cheer me up</button>
+        </div>
+      </section>`
+    : `<section class="panel"><h2>Last caught</h2><p class="muted">Write to your agent in English and your corrections show up here.</p></section>`;
+
+  const boxes = st.boxes || [];
+  const alerts = [
+    st.failed ? `<p class="alert">${plural(st.failed, "prompt check")} failed · run <code>eng check -retry</code></p>` : "",
+    st.speaking.pending ? `<p class="alert"><a href="#/speak">${plural(st.speaking.pending, "spoken answer")} not checked yet</a></p>` : "",
+    st.llm.ok ? "" : `<p class="alert">No reviewer for new prompts · run <code>eng doctor</code></p>`,
+  ].join("");
 
   view.innerHTML = `
-    ${heroHTML}
-    <section class="section">
-      <h2>${ready.length ? "Ready to practise" : "Topics"}</h2>
-      <ul class="topics">${rows}</ul>
-    </section>
-    <section class="section leaf">
-      <div class="text">
-        <h2>Mistakes per 100 words in your prompts</h2>
-        ${weeks.length ? `<svg class="chart" viewBox="0 0 360 124" role="img" aria-label="Weekly mistake rate">${bars}</svg>` : `<p class="muted">This fills in as you write English prompts; the count is per week, so it drops as your English improves.</p>`}
-        <div class="figures">
-          <div><b>${st.streak}</b>day streak</div>
-          <div><b>${st.today}</b>answers today</div>
-          <div><b>${st.totals.mistakes}</b>mistakes logged</div>
-          <div><b>${st.unseen}</b>cards not yet seen</div>
-        </div>
-      </div>
-      <aside class="note"><strong>Lower is better.</strong><p>Each English prompt you send is checked in the background; nothing waits for it.</p></aside>
-    </section>
-    <section class="section leaf">
-      <div class="text">
-        <h2>Speaking</h2>
-        ${speaking}
-        <div class="actions"><a class="button" href="#/speak">Answer a question out loud</a>
-          ${st.speaking.pending ? `<span class="muted">${st.speaking.pending} answers not checked yet</span>` : ""}</div>
-      </div>
-    </section>
-    <section class="section">
-      <h2>Your most repeated mistakes</h2>
-      <ul class="plain">${st.top_rules
-        .map((r) => `<li>${esc(r.rule)} <span class="muted">— ${times(r.count)}, last on ${dayOf(r.last)}</span></li>`)
-        .join("")}</ul>
-    </section>`;
+    ${signHTML}
+    ${postsHTML}
+    <div class="duo">
+      ${heroHTML}
+      <section class="panel">
+        <h2>Mistakes per 100 checked words</h2>
+        ${rateChart(st.weeks)}
+        ${rateFigures(st)}
+      </section>
+    </div>
+    <div id="growth"></div>
+    <div class="strip">
+      <section class="timetable" aria-label="Next reviews">
+        <h2>Next reviews</h2>
+        <ol>${BOXES.map((b, i) => `<li>${b} <b>${boxes[i] ?? 0}</b></li>`).join("")}</ol>
+        ${st.next_due && !st.due ? `<span class="next">next at ${nextAt(st.next_due)}</span>` : ""}
+      </section>
+      ${alerts ? `<div class="alerts">${alerts}</div>` : ""}
+    </div>
+    ${st.top_rules.length
+      ? `<section class="panel"><h2>Your most repeated mistakes</h2>
+          <table class="board compact"><tbody>${st.top_rules
+            .map((r) => `<tr><td class="rule">${esc(r.rule)}</td><td class="num">×${r.count}</td><td class="when">${dayOf(r.last)}</td></tr>`)
+            .join("")}</tbody></table></section>`
+      : ""}`;
 
   view.querySelector("[data-cheer]")?.addEventListener("click", (e) => growthCard(e.currentTarget));
 
   keyHandler = (e) => {
-    if (e.key === "Enter" && heroTopic && document.activeElement === view) location.hash = `#/drill/${heroTopic}`;
+    if (e.key === "Enter" && document.activeElement === view) location.hash = next;
   };
 }
 
@@ -356,7 +498,7 @@ function wireExplanation(root, quiz) {
     li.querySelectorAll("[data-pick]").forEach((b) =>
       b.addEventListener("click", () => {
         const ok = b.dataset.pick === q.answer;
-        const shown = (w) => (w === NONE ? `<span class="zero" title="no word here">‸</span>` : esc(w));
+        const shown = (w) => esc(w);
         const slot = li.querySelector("[data-slot]");
         slot.classList.add("filled");
         slot.innerHTML = (ok ? "" : `<del class="slip">${shown(b.dataset.pick)}</del> `) + `<ins class="fix write">${shown(q.answer)}</ins>`;
@@ -409,11 +551,9 @@ function wroteHTML(c) {
 }
 
 function gapResult(given, answer) {
-  const ok = normGap(given) === normGap(answer);
-  const zero = `<span class="zero" title="no word here">‸</span>`;
-  if (ok) return answer === NONE ? zero : `<ins class="fix write">${esc(answer)}</ins>`;
-  const slip = normGap(given) !== NONE ? `<del class="slip">${esc(given)}</del> ` : "";
-  return slip + (normGap(answer) === NONE ? zero : `<ins class="fix write">${esc(answer)}</ins>`);
+  const fix = normGap(answer) === NONE ? `<ins class="fix" title="no word here">${NONE}</ins>` : `<ins class="fix">${esc(answer)}</ins>`;
+  if (normGap(given) === normGap(answer)) return fix;
+  return (normGap(given) !== NONE ? `<del class="slip">${esc(given)}</del> ` : "") + fix;
 }
 
 function clozeHTML(card, given) {
@@ -440,13 +580,19 @@ async function drill(topic) {
   const threshold = st.topics.find((t) => t.id === topic)?.threshold;
   const cards = data.cards;
   if (!cards.length) {
-    view.innerHTML = `<section class="leaf"><div class="text">
-      <p class="sentence">${topic === "review" ? "Nothing is due right now." : "No exercises in this topic yet."}</p>
-      <p class="prose muted">${topic === "review"
-        ? "Cards come back 1, 3, 7, 21 and 60 days after you answer them correctly, and the same day when you miss them."
-        : "Exercises appear as mistakes in this topic are logged, or when you ask for new ones."}</p>
-      <div class="actions">${st.topics.find((t) => t.ready) ? `<a class="button primary" href="#/drill/${esc(st.topics[0].id)}">Practise ${esc(st.topics[0].title)}</a>` : ""}<a class="button" href="#/">Back to today</a></div>
-    </div></section>`;
+    const ripe = st.topics.find((t) => t.ready);
+    view.innerHTML = `${sign({
+        title: topic === "review" ? "Nothing is due right now" : "No exercises in this topic yet",
+        sub: topic === "review" && st.next_due ? `Next review at ${nextAt(st.next_due)}` : "",
+        action: ripe ? `<a class="button primary" href="#/drill/${esc(ripe.id)}">Practise ${esc(ripe.title)}</a>` : `<a class="button primary" href="#/">Back to today</a>`,
+        long: true,
+      })}
+      <section class="leaf"><div class="text">
+        <p class="prose">${topic === "review"
+          ? "Cards come back 1, 3, 7, 21 and 60 days after you answer them correctly, and the same day when you miss them."
+          : "Exercises appear as mistakes in this topic are logged, or when you ask for new ones."}</p>
+        ${ripe ? `<div class="actions"><a class="button" href="#/">Back to today</a></div>` : ""}
+      </div></section>`;
     return;
   }
 
@@ -459,29 +605,60 @@ async function drill(topic) {
       .join("")}</div>`;
   const summary = lessons[topic]?.summary;
 
+  const isSingle = (c) => c.type === "cloze" && c.choices?.length && c.text.split("___").length === 2;
+
+  const askSign = (c) =>
+    sign({
+      title: c.type === "fix" ? "Rewrite the sentence so it is correct" : isSingle(c) ? "Pick the word that fits" : "Type the missing words",
+      sub: `${esc(title)}${isSingle(c) ? ` · keys 1 to ${c.choices.length}` : c.type === "fix" ? " · edit in place, then Enter" : ""}`,
+      figure: idx + 1,
+      label: `of ${cards.length}`,
+      extra: ticks(),
+      long: true,
+      flip: idx > 0,
+    });
+
+  const answeredSign = (ok, selfGrade) =>
+    sign({
+      picto: selfGrade ? "help" : ok ? "check" : "alert",
+      title: selfGrade ? "Was yours right?" : ok ? "Right" : "Not quite",
+      sub: selfGrade ? "Close, but not word for word" : ok ? esc(title) : "The fix is marked in blue",
+      figure: idx + 1,
+      label: `of ${cards.length}`,
+      action: selfGrade
+        ? `<button class="primary" data-grade="1">Mine was right <kbd>y</kbd></button><button data-grade="0">I missed it <kbd>n</kbd></button>`
+        : `<button class="primary" data-next>${idx + 1 < cards.length ? "Next card" : "Finish"} <kbd>↵</kbd></button>`,
+      extra: ticks(),
+      long: true,
+      flip: true,
+    });
+
   const askNote = (c) =>
     (c.type === "fix"
-      ? `<strong>Rewrite the sentence so it is correct.</strong><p>Edit the text in place, then press Enter.</p>`
-      : c.choices?.length && c.text.split("___").length === 2
-        ? `<strong>Pick the word that fits.</strong><p>${NONE} means no word belongs there. Keys 1 to ${c.choices.length}.</p>`
-        : `<strong>Type the missing words.</strong><p>Leave a blank empty or type ${NONE} when no word belongs there.</p>`) +
+      ? `<strong>Fix the whole sentence.</strong><p>Grammar, articles and word order all count.</p>`
+      : isSingle(c)
+        ? `<strong>${NONE} means no word belongs there.</strong>`
+        : `<strong>Leave a blank empty or type ${NONE} when no word belongs there.</strong>`) +
+    `<p class="box-line">${boxLine(c)}</p>` +
     (summary ? `<p>${esc(summary)}</p>` : "");
 
-  const answerNote = (c) => `<strong>${esc(c.rule)}</strong>
-      ${c.note ? `<p>${esc(c.note)}</p>` : ""}
-      ${c.source === "mistake" && c.date ? `<p>From your writing on ${dayOf(c.date)}.</p>` : c.source === "pack" ? "<p>A new sentence written from your mistakes.</p>" : ""}
-      <p><button class="link" data-say>Hear it</button></p>`;
+  // grading moves a card one box up when right and back to the first box when missed.
+  const boxOf = (c) => Math.min(Math.max(c.box || 0, 0), BOXES.length - 1);
+  const backIn = (c, ok) => (ok ? BOXES[Math.min(boxOf(c) + 1, BOXES.length - 1)] : BOXES[0]);
+  const boxLine = (c) => `Box ${boxOf(c) + 1} of ${BOXES.length} · right: back in ${backIn(c, true)} · missed: back in ${backIn(c, false)}`;
 
-  function frame(inner, note, below = "") {
-    view.innerHTML = `<section class="leaf">
-      <div class="text">
-        <h1>${esc(title)}</h1>
-        ${ticks()}
-        ${inner}
-      </div>
-      <aside class="note" id="note">${note}</aside>
-      ${below}
-    </section>`;
+  const answerNote = (c, ok, selfGrade) => `<strong>${esc(c.rule)}</strong>
+      <p class="box-line">${selfGrade ? boxLine(c) : `Back in ${backIn(c, ok)}`}</p>
+      ${c.note ? `<p>${esc(c.note)}</p>` : ""}
+      ${c.source === "mistake" && c.date ? `<p>From your writing on ${dayOf(c.date)}.</p>` : c.source === "pack" ? "<p>A new sentence written from your mistakes.</p>" : ""}`;
+
+  function frame(signHTML, inner, note, below = "") {
+    view.innerHTML = `${signHTML}
+      <section class="leaf">
+        <div class="text">${inner}</div>
+        <aside class="note" id="note">${note}</aside>
+        ${below}
+      </section>`;
   }
 
   async function grade(c, ok, given) {
@@ -501,20 +678,15 @@ async function drill(topic) {
 
   function showAnswered(c, inner, ok, selfGrade, given) {
     frame(
-      `${inner}
-       ${wroteHTML(c)}
-       ${selfGrade ? "" : `<p class="verdict ${ok ? "ok" : "miss"}">${ok ? "Right." : "Not quite. The fix is marked in blue."}</p>`}
+      answeredSign(ok, selfGrade),
+      `<div class="paper">${inner}${wroteHTML(c)}</div>
        <div class="actions" id="after">
-         ${selfGrade
-          ? `<p class="verdict miss" style="width:100%;margin:0">Close, but not word for word. Was yours right?</p>
-               <button class="primary" data-grade="1">Mine was right <kbd>y</kbd></button>
-               <button data-grade="0">I missed it <kbd>n</kbd></button>`
-            : `<button class="primary" data-next>Next card <kbd>↵</kbd></button>`}
-          <button class="link" data-explain>Explain this more</button>
-        </div>`,
-       answerNote(c),
-       `<div class="explain" id="explanation" aria-live="polite"></div>`
-     );
+         <button data-say>${SPEAKER}Hear it</button>
+         <button data-explain>Explain this more</button>
+       </div>`,
+      answerNote(c, ok, selfGrade),
+      `<div class="explain" id="explanation" aria-live="polite"></div>`
+    );
     const full = c.after || (c.type === "fix" ? c.answers[0] : "");
     view.querySelector("[data-say]")?.addEventListener("click", () => say(full || c.text.replaceAll("___", c.answers[0])));
     view.querySelector("[data-next]")?.addEventListener("click", next);
@@ -566,22 +738,20 @@ async function drill(topic) {
 
   function ask() {
     const c = cards[idx];
-    const single = c.type === "cloze" && c.choices?.length && c.text.split("___").length === 2;
+    const single = isSingle(c);
+    const checkActions = `<div class="actions"><button class="primary" data-check>Check <kbd>↵</kbd></button><button class="link" data-skip>Show the answer</button></div>`;
     let inner;
     if (c.type === "fix") {
-      inner = `<p class="sentence medium">${esc(c.text)}</p>
-        ${wroteHTML(c)}
+      inner = `<div class="paper"><p class="sentence medium">${esc(c.text)}</p>${wroteHTML(c)}</div>
         <textarea id="answer" rows="3" aria-label="Your corrected sentence" spellcheck="false">${esc(c.text)}</textarea>
-        <div class="actions"><button class="primary" data-check>Check <kbd>↵</kbd></button>
-          <button class="link" data-skip>Show the answer</button></div>`;
+        ${checkActions}`;
     } else {
-      inner = `<p class="sentence">${clozeHTML(c)}</p>
-        ${wroteHTML(c)}
+      inner = `<div class="paper"><p class="sentence">${clozeHTML(c)}</p>${wroteHTML(c)}</div>
         ${single
-          ? `<div class="choices">${c.choices.map((ch, k) => `<button data-choice="${esc(ch)}"><kbd>${k + 1}</kbd> ${esc(ch)}</button>`).join("")}</div>`
-          : `<div class="actions"><button class="primary" data-check>Check <kbd>↵</kbd></button><button class="link" data-skip>Show the answer</button></div>`}`;
+          ? `<div class="choices">${c.choices.map((ch, k) => `<button data-choice="${esc(ch)}"><kbd>${k + 1}</kbd>${esc(ch)}</button>`).join("")}</div>`
+          : checkActions}`;
     }
-    frame(inner, askNote(c));
+    frame(askSign(c), inner, askNote(c));
 
     const checkCloze = async (given) => {
       const ok = given.every((g, k) => normGap(g) === normGap(c.answers[k]));
@@ -637,14 +807,18 @@ async function drill(topic) {
       toast(`Session not saved: ${e.message}`);
     }
     cache.status = null;
-    view.innerHTML = `<section class="leaf">
+    view.innerHTML = `${sign({
+        title: `${right} of ${results.length} right`,
+        sub: esc(title),
+        action: `<button class="primary" data-again>Another round <kbd>↵</kbd></button>`,
+        extra: ticks(),
+        long: true,
+        flip: true,
+      })}
+      <section class="leaf">
       <div class="text">
-        <h1>${esc(title)}</h1>
-        ${ticks()}
-        <p class="sentence">${right} of ${results.length} right.</p>
-        ${missed.length ? `<h2 style="margin-top:2rem">Worth another look</h2><ul class="plain">${missed.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+        ${missed.length ? `<section class="panel"><h2>Worth another look</h2><ul class="plain">${missed.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></section>` : ""}
         <div class="actions">
-          <button class="primary" data-again>Another round</button>
           ${topic !== "review" ? `<button data-gen>Write 12 new exercises from my mistakes</button>` : ""}
           <a class="button" href="#/">Back to today</a>
         </div>
@@ -697,13 +871,14 @@ function reviewHTML(rec) {
   const errs = (r.errors || [])
     .map((e) => `<li><span class="example">${renderDiff(e.before, e.after)}</span><br><span class="muted">${esc(e.rule)}</span></li>`)
     .join("");
-  return `<h3 style="margin-top:2rem">Corrected</h3>
-    <p class="sentence small">${renderDiff(rec.transcript, r.corrected, true)}</p>
-    <div class="actions"><button data-hear="${esc(r.corrected)}">Hear the corrected version</button></div>
-    ${errs ? `<h3 style="margin-top:2rem">What to fix</h3><ul class="plain">${errs}</ul>` : `<p class="verdict ok">No grammar mistakes found.</p>`}
-    ${r.tips?.length ? `<h3 style="margin-top:2rem">Tips</h3><ul class="plain">${r.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-    ${r.fluency ? `<p class="prose muted">${esc(r.fluency)}</p>` : ""}
-    ${costBadge(rec)}`;
+  return `<section class="panel">
+      <h2>Corrected</h2>
+      <div class="paper"><p class="sentence small">${renderDiff(rec.transcript, r.corrected)}</p></div>
+      <div class="actions"><button data-hear="${esc(r.corrected)}">${SPEAKER}Hear the corrected version</button>${costBadge(rec)}</div>
+    </section>
+    ${errs ? `<section class="panel"><h2>What to fix</h2><ul class="plain">${errs}</ul></section>` : `<p class="verdict ok">No grammar mistakes found.</p>`}
+    ${r.tips?.length ? `<section class="panel"><h2>Tips</h2><ul class="plain">${r.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></section>` : ""}
+    ${r.fluency ? `<p class="prose">${esc(r.fluency)}</p>` : ""}`;
 }
 
 function starBar(score) {
@@ -720,15 +895,15 @@ function interviewReviewHTML(rec) {
       return `<tr><td>${esc(d[0].toUpperCase() + d.slice(1))}</td><td>${starBar(s.score)}</td><td>${esc(s.feedback)}</td></tr>`;
     })
     .join("");
-  return `<h3 style="margin-top:2rem">STAR review</h3>
+  return `<section class="panel"><h2>STAR review</h2>
     <table class="star-table"><tbody>${rows}</tbody></table>
     <p><strong>Overall:</strong> ${starBar(r.overall_score)}</p>
-    ${r.rewrite ? `<h3 style="margin-top:2rem">Tighter version</h3><p class="sentence small">${esc(r.rewrite)}</p>` : ""}
+    ${r.rewrite ? `<h3 class="sub">Tighter version</h3><p class="sentence small">${esc(r.rewrite)}</p>` : ""}
     ${r.story_match ? `<p class="prose muted">Best story match: ${esc(r.story_match)}</p>` : ""}
-    ${r.strengths?.length ? `<h3 style="margin-top:2rem">Strengths</h3><ul class="plain">${r.strengths.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    ${r.gaps?.length ? `<h3 style="margin-top:2rem">Gaps</h3><ul class="plain">${r.gaps.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    ${r.follow_ups?.length ? `<h3 style="margin-top:2rem">Likely follow-ups</h3><ul class="plain">${r.follow_ups.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    ${costBadge(rec)}`;
+    ${r.strengths?.length ? `<h3 class="sub">Strengths</h3><ul class="plain">${r.strengths.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${r.gaps?.length ? `<h3 class="sub">Gaps</h3><ul class="plain">${r.gaps.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${r.follow_ups?.length ? `<h3 class="sub">Likely follow-ups</h3><ul class="plain">${r.follow_ups.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    <div class="actions">${costBadge(rec)}</div></section>`;
 }
 
 function wireHear(root) {
@@ -749,40 +924,45 @@ async function speakView(modeHint = "grammar", promptHint = "") {
     .map(
       (r) => `<li><details><summary><span class="muted">${when(r.ts)}</span> ${esc(r.prompt)}
         <span class="muted">— ${r.words} words, ${r.review ? `${(r.review.errors || []).length} to fix` : r.interview_review ? "STAR review" : "not checked yet"}</span></summary>
-        <p class="sentence small">${esc(r.transcript)}</p>${r.interview_review ? interviewReviewHTML(r) : reviewHTML(r)}</details></li>`
+        <div class="stack-gap"><div class="paper"><p class="sentence small">${esc(r.transcript)}</p></div>${r.interview_review ? interviewReviewHTML(r) : reviewHTML(r)}</div></details></li>`
     )
     .join("");
 
-  view.innerHTML = `<section class="leaf">
+  const modeOption = (value, text) =>
+    `<label><input type="radio" name="mode" value="${value}" ${reviewMode === value ? "checked" : ""}>${text}</label>`;
+
+  view.innerHTML = `${sign({
+      title: esc(q.prompt),
+      sub: `Answer out loud · one to two minutes${q.focus ? ` · watch ${esc(q.focus)}` : ""}`,
+      long: true,
+    })}
+    <section class="leaf">
       <div class="text">
-        <p class="sentence medium">${esc(q.prompt)}</p>
-        ${whisperOk ? "" : `<div class="callout">Recording works once these are in place: ${esc(tools.missing || "OpenRouter key or local whisper-cpp")}.<br>Run <code>eng doctor</code> in a terminal, then reload.</div>`}
+        ${whisperOk ? "" : `<div class="callout">Recording works once these are in place: ${esc(tools.missing || "OpenRouter key or local whisper-cpp")}. Run <code>eng doctor</code> in a terminal, then reload.</div>`}
         ${st.llm.ok ? "" : `<div class="callout">The grammar check needs OpenRouter or the claude CLI; <code>eng doctor</code> shows which one is missing.</div>`}
-        ${backendNote}
-        <div class="actions">
-          <button class="record primary" id="rec" ${whisperOk ? "" : "disabled"}><span class="dot"></span><span id="rec-label">Record</span> <kbd>space</kbd></button>
-          <span class="timer" id="timer"></span>
-          <select id="mode" aria-label="Review mode">
-            <option value="grammar" ${reviewMode === "grammar" ? "selected" : ""}>Check grammar</option>
-            <option value="star" ${reviewMode === "star" ? "selected" : ""}>Check as interview answer (STAR)</option>
-          </select>
-          <button class="link" id="another">Another question</button>
-        </div>
-        <div id="out"></div>
+        <section class="panel">
+          <div class="recorder">
+            <button class="record" id="rec" ${whisperOk ? "" : "disabled"}><span class="rec-dot">${picto("mic")}</span><span id="rec-label">Record</span> <kbd>space</kbd></button>
+            <span class="timer" id="timer"></span>
+            <fieldset class="segmented"><legend>Review mode</legend>${modeOption("grammar", "Grammar")}${modeOption("star", "STAR interview")}</fieldset>
+            <button class="link" id="another">Another question</button>
+          </div>
+          ${backendNote}
+        </section>
+        <div id="out" class="stack-gap"></div>
       </div>
-      <aside class="note"><strong>Talk for one to two minutes.</strong>
-        ${q.focus ? `<p>Try to get this one right: ${esc(q.focus)}.</p>` : ""}
-        <p>Whisper writes down what you say; the check ignores fillers and punctuation.</p></aside>
+      <aside class="note"><strong>Talk the way you would at work.</strong>
+        <p>Whisper writes down what you say; the check ignores fillers and punctuation.</p>
+        <p>Grammar marks what to fix. STAR rates an interview answer by situation, task, action and result.</p></aside>
     </section>
-    <section class="section"><h2>Earlier answers</h2>${hist ? `<ul class="plain">${hist}</ul>` : `<p class="muted">Your recorded answers will be listed here.</p>`}</section>`;
+    <section class="stack-gap"><h2>Earlier answers</h2>${hist ? `<ul class="plain">${hist}</ul>` : `<p class="muted">Your recorded answers will be listed here.</p>`}</section>`;
   wireHear(view);
 
   const out = view.querySelector("#out");
   const recBtn = view.querySelector("#rec");
   const label = view.querySelector("#rec-label");
   const timer = view.querySelector("#timer");
-  const modeSelect = view.querySelector("#mode");
-  modeSelect.addEventListener("change", () => { reviewMode = modeSelect.value; });
+  view.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener("change", () => { reviewMode = r.value; }));
   view.querySelector("#another").addEventListener("click", () => route());
 
   async function start() {
@@ -828,10 +1008,10 @@ async function speakView(modeHint = "grammar", promptHint = "") {
     try {
       const rec = await api("/api/speak", { method: "POST", body: form });
       const canCheck = rec.transcript && st.llm.ok;
-      out.innerHTML = `<h3 style="margin-top:2rem">What Whisper heard</h3>
-        <p class="sentence small">${esc(rec.transcript) || "<span class='muted'>Nothing was recognised.</span>"}</p>
+      out.innerHTML = `<section class="panel"><h2>What Whisper heard</h2>
+        <div class="paper"><p class="sentence small">${esc(rec.transcript) || "<span class='muted'>Nothing was recognised.</span>"}</p></div>
         <div class="actions"><button class="primary" id="check" ${canCheck ? "" : "disabled"}>${reviewMode === "star" ? "Check as STAR answer" : "Check my grammar"}</button>
-        <span class="muted">${rec.words} words · ${esc(rec.whisper_backend)}</span></div><div id="review"></div>`;
+        <span class="muted">${rec.words} words · ${esc(rec.whisper_backend)}</span></div></section><div id="review" class="stack-gap"></div>`;
       const check = out.querySelector("#check");
       check.addEventListener("click", async () => {
         check.disabled = true;
@@ -880,21 +1060,40 @@ async function workView(topic) {
   const cats = data.categories || [];
   let active = cats.find((c) => c.id === topic) || cats[0];
 
-  const nav = `<nav class="lesson-nav" aria-label="Work English topics">${cats
-    .map((c) => `<a href="#/work/${esc(c.id)}" ${c.id === active?.id ? 'aria-current="page"' : ""}>${esc(c.title)}</a>`)
+  const nav = `<nav class="posts stack nav" aria-label="Work English topics">${cats
+    .map((c) =>
+      post({
+        href: `#/work/${esc(c.id)}`,
+        picto: WORK_PICTO[c.id] || "chat",
+        title: esc(c.title),
+        sub: `${plural(c.phrases?.length || 0, "phrase")}${c.prompts?.length ? ` · ${plural(c.prompts.length, "prompt")}` : ""}`,
+        current: c.id === active?.id,
+      })
+    )
     .join("")}</nav>`;
 
   const categoryHTML = (c) => `
-    <section class="leaf">
-      <div class="text">
-        <h1>${esc(c.title)}</h1>
-        ${c.phrases?.length ? `<h2>Useful phrases</h2><ul class="plain phrases">${c.phrases.map((p) => `<li><p>${esc(p.text)}</p>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ""}</p></li>`).join("")}</ul>` : ""}
-        ${c.prompts?.length ? `<h2>Practice prompts</h2><ul class="plain prompts">${c.prompts.map((p) => `<li><p>${esc(p)}</p><a class="button" href="#/speak?mode=${c.id === "interview" ? "star" : "grammar"}&prompt=${encodeURIComponent(p)}">Record an answer</a></li>`).join("")}</ul>` : ""}
-      </div>
-      <aside class="note"><strong>${esc(c.title)}</strong><p>Pick a prompt, record your answer, and choose grammar or STAR feedback.</p></aside>
-    </section>`;
+    ${sign({
+      title: esc(c.title),
+      sub: c.id === "interview" ? "Phrases to borrow, then answer out loud for a STAR review" : "Phrases to borrow, then answer out loud for a grammar check",
+      long: true,
+    })}
+    ${c.phrases?.length
+      ? `<section class="panel"><h2>Useful phrases</h2><ul class="phrases">${c.phrases
+          .map((p) => `<li><div><p>${esc(p.text)}</p>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ""}</div>
+            <button data-hear="${esc(p.text)}">${SPEAKER}Listen</button></li>`)
+          .join("")}</ul></section>`
+      : ""}
+    ${c.prompts?.length
+      ? `<section class="panel"><h2>Practice prompts</h2><ul class="prompts">${c.prompts
+          .map((p) => `<li><p>${esc(p)}</p><a class="button primary" href="#/speak?mode=${c.id === "interview" ? "star" : "grammar"}&prompt=${encodeURIComponent(p)}">${picto("mic")}Record an answer</a></li>`)
+          .join("")}</ul></section>`
+      : ""}`;
 
-  view.innerHTML = `${nav}${active ? categoryHTML(active) : `<p class="muted">No Work English content yet.</p>`}`;
+  view.innerHTML = active
+    ? `<div class="split">${nav}<div class="split-main">${categoryHTML(active)}</div></div>`
+    : `<p class="muted">No Work English content yet.</p>`;
+  wireHear(view);
 }
 
 /* ---------- check a pasted text ---------- */
@@ -903,26 +1102,32 @@ const KIND_LABEL = { grammar: "grammar", punctuation: "punct", lexical: "word ch
 
 async function checkView() {
   const st = cache.status ? cache.status : await getStatus();
-  view.innerHTML = `<section class="leaf">
-      <div class="text">
-        <h1>Check a text before you send it</h1>
-        <p class="prose muted">Paste an email, an MR description or a message. The LLM marks what to fix; what you confirm joins the mistake pile and comes back as drills.</p>
-        <textarea id="paste" rows="8" placeholder="Paste your English here…" spellcheck="false"></textarea>
+  const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+  const placeholder = `<h2>Corrected</h2><p class="muted">The corrected text appears here. What you confirm joins the mistake pile and comes back as drills; style notes are advice and never enter it.</p>`;
+  view.innerHTML = `${sign({
+      title: "Check a text before you send it",
+      sub: "An email, an MR description or a message · nothing is logged until you confirm",
+      long: true,
+    })}
+    <div class="duo even">
+      <section class="panel">
+        <h2>Your text</h2>
+        <textarea id="paste" rows="10" placeholder="Paste your English here…" spellcheck="false" aria-label="Text to check"></textarea>
         <div class="actions">
-          <button class="primary" id="run" disabled>Check <kbd>↵</kbd></button>
+          <button class="primary" id="run" disabled>Check <kbd>${mod} ↵</kbd></button>
           <button class="link" id="clear" hidden>Clear</button>
           <span class="muted" id="meta"></span>
         </div>
-        <div id="out"></div>
-      </div>
-      <aside class="note"><strong>Nothing is logged until you say so.</strong>
-        <p>Style notes are only advice — they never enter the database.</p>
-        ${st.llm.ok ? "" : `<p class="callout">No LLM backend: run <code>eng doctor</code>.</p>`}</aside>
-    </section>`;
+        ${st.llm.ok ? "" : `<div class="callout">No reviewer is set up: run <code>eng doctor</code> in a terminal.</div>`}
+      </section>
+      <section class="panel" id="out" aria-live="polite">${placeholder}</section>
+    </div>
+    <div id="fixes" class="stack-gap"></div>`;
   const ta = view.querySelector("#paste");
   const run = view.querySelector("#run");
   const clearBtn = view.querySelector("#clear");
   const out = view.querySelector("#out");
+  const fixes = view.querySelector("#fixes");
   const meta = view.querySelector("#meta");
   let draft = null;
   const explainers = new Map();
@@ -936,7 +1141,8 @@ async function checkView() {
     ta.value = "";
     run.disabled = true;
     clearBtn.hidden = true;
-    out.innerHTML = "";
+    out.innerHTML = placeholder;
+    fixes.innerHTML = "";
     meta.textContent = "";
     draft = null;
     explainers.clear();
@@ -944,9 +1150,9 @@ async function checkView() {
   });
 
   const mistakeRow = (e, count, k) => `<li>
-      <p class="sentence small">${renderDiff(e.before, e.after)}</p>
-      <div class="note"><strong>${esc(e.rule)}</strong>
-        <p><span class="tag kind">${esc(KIND_LABEL[e.category] || e.category)}</span>${count ? ` <span class="muted">×${count}</span>` : ""}${e.note ? ` — ${esc(e.note)}` : ""}</p>
+      <p class="diff">${renderDiff(e.before, e.after)}</p>
+      <div class="why"><strong>${esc(e.rule)}</strong>
+        <p><span class="tag kind">${esc(KIND_LABEL[e.category] || e.category)}</span>${count ? ` ×${count} before` : ""}${e.note ? ` · ${esc(e.note)}` : ""}</p>
         <p><button class="link" data-explain-mistake="${k}">Explain this more</button></p>
       </div>
       <div class="explain" data-explanation="${k}" aria-live="polite"></div>
@@ -989,7 +1195,8 @@ async function checkView() {
     if (!text) return;
     run.disabled = true;
     run.textContent = "Checking…";
-    out.innerHTML = `<p class="muted wait">Reading your text… <span data-elapsed>0 s</span></p>`;
+    out.innerHTML = `<h2>Corrected</h2><p class="muted wait">Reading your text… <span data-elapsed>0 s</span></p>`;
+    fixes.innerHTML = "";
     clearBtn.hidden = false;
     const started = Date.now();
     const clock = setInterval(() => {
@@ -1000,7 +1207,7 @@ async function checkView() {
       draft = await api("/api/check", { method: "POST", json: { text } });
       renderResult();
     } catch (e) {
-      out.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+      out.innerHTML = `<h2>Corrected</h2><p class="error">${esc(e.message)}</p>`;
     } finally {
       clearInterval(clock);
       run.disabled = false;
@@ -1015,21 +1222,27 @@ async function checkView() {
     const style = draft.errors.map((e, k) => ({ e, k })).filter(({ e }) => e.category === "style");
     const counted = draft.counted || {};
     out.innerHTML = `
-      <h3 style="margin-top:2rem">Corrected</h3>
-      <p class="sentence small">${draft.corrected === draft.original ? esc(draft.corrected) : renderDiff(draft.original, draft.corrected, true)}</p>
+      <h2>Corrected</h2>
+      <div class="paper"><p class="sentence small">${draft.corrected === draft.original ? esc(draft.corrected) : renderDiff(draft.original, draft.corrected)}</p></div>
       <div class="actions">
-        <button data-hear="${esc(draft.corrected)}">Hear it</button>
-        ${draft.cost ? `<span class="cost">$${draft.cost.toFixed(4)}</span>` : ""}
+        <button data-hear="${esc(draft.corrected)}">${SPEAKER}Hear it</button>
+        ${draft.cost ? `<span class="cost">${esc(draft.backend || "")} $${draft.cost.toFixed(4)}</span>` : ""}
       </div>
+      ${draft.perception ? `<h3 class="sub">How it reads</h3><p class="prose">${esc(draft.perception)}</p>` : ""}
+      ${draft.native ? `<h3 class="sub">How a native would write it</h3>
+      <div class="paper"><p class="sentence small">${esc(draft.native)}</p></div>
+      <div class="actions"><button data-hear="${esc(draft.native)}">${SPEAKER}Hear it</button></div>` : ""}`;
+    fixes.innerHTML = `
       ${fixable.length
-        ? `<h3 style="margin-top:2rem">What to fix <span class="muted">(${fixable.length})</span></h3><ul class="plain">${fixable.map(({ e, k }) => mistakeRow(e, counted[e.rule], k)).join("")}</ul>
-           <div class="actions"><button class="primary" id="log">Add ${fixable.length} to the mistake pile</button></div>`
+        ? `<h2>What to fix <span class="muted">${fixable.length}</span></h2><ul class="fixes">${fixable.map(({ e, k }) => mistakeRow(e, counted[e.rule], k)).join("")}</ul>
+           <div class="actions"><button class="primary" id="log">Add ${plural(fixable.length, "mistake")} to the pile</button></div>`
         : `<p class="verdict ok">No grammar mistakes found.</p>`}
       ${style.length
-        ? `<h3 style="margin-top:2rem">Style notes <span class="muted">(advice, not logged)</span></h3><ul class="plain">${style.map(({ e, k }) => mistakeRow(e, 0, k)).join("")}</ul>` : ""}`;
+        ? `<h2>Style notes <span class="muted">advice, not logged</span></h2><ul class="fixes">${style.map(({ e, k }) => mistakeRow(e, 0, k)).join("")}</ul>` : ""}`;
     wireHear(out);
+    wireHear(fixes);
     wireExplainers();
-    const logBtn = out.querySelector("#log");
+    const logBtn = fixes.querySelector("#log");
     logBtn?.addEventListener("click", async () => {
       logBtn.disabled = true;
       logBtn.textContent = "Writing…";
@@ -1075,13 +1288,15 @@ async function growthCard(anchor) {
   try {
     const st = await api("/api/growth");
     section = document.createElement("section");
-    section.className = "section leaf growth";
+    section.className = "leaf growth";
     section.innerHTML = `
       <div class="text">
         <h2>Are you actually getting better?</h2>
         <div class="figures" aria-busy="true"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
       </div>`;
-    anchor.closest("section").after(section);
+    const slot = document.getElementById("growth");
+    if (slot) slot.replaceChildren(section);
+    else anchor.closest("section").after(section);
     const cheerPromise = st.llm_ok === false ? Promise.resolve(null) : api("/api/growth/cheer", { method: "POST" }).catch(() => null);    const months = (st.months || []).slice(-6);
     const maxRate = Math.max(1, ...months.map((m) => m.rate));
     const bars = months
@@ -1142,28 +1357,53 @@ async function mistakesView() {
   const [list, st] = await Promise.all([getMistakes(), cache.status ? Promise.resolve(cache.status) : getStatus()]);
   let topic = "";
   let query = "";
-  view.innerHTML = `<h1>Everything you have written wrong, corrected</h1>
-    <div class="filters" role="group" aria-label="Filter by topic">
-      <button aria-pressed="true" data-topic="">All ${list.length}</button>
-      ${st.topics.map((t) => `<button aria-pressed="false" data-topic="${esc(t.id)}">${esc(t.title)} ${t.total}</button>`).join("")}
+  let newest = true;
+  const oldest = list.reduce((d, m) => (m.date < d ? m.date : d), list[0]?.date || "");
+  view.innerHTML = `${sign({
+      title: list.length ? `${plural(list.length, "mistake")} · ${plural(st.totals.rules, "rule")}` : "No mistakes yet",
+      sub: list.length ? `since ${dayOf(oldest)} · everything you wrote wrong, corrected` : "They arrive as your English prompts are checked",
+      action: st.due ? `<a class="button primary" href="#/review">Review ${st.due} due</a>` : "",
+      long: true,
+    })}
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Search sentences or rules" aria-label="Search mistakes">
+      <div class="filters" role="group" aria-label="Filter by topic">
+        <button aria-pressed="true" data-topic="">All<span>${list.length}</span></button>
+        ${st.topics.filter((t) => t.total).map((t) => `<button aria-pressed="false" data-topic="${esc(t.id)}">${esc(t.title)}<span>${t.total}</span></button>`).join("")}
+      </div>
     </div>
-    <input type="search" id="q" placeholder="Search your sentences and rules" aria-label="Search mistakes">
-    <ul class="rows" id="list" style="margin-top:1.5rem"></ul>`;
-  const ul = view.querySelector("#list");
+    <div class="board-wrap sheet">
+      <table class="board archive">
+        <thead><tr>
+          <th scope="col" aria-sort="descending"><button data-sort>Date ${picto("sort")}</button></th>
+          <th scope="col">Before → after</th><th scope="col">Category</th><th scope="col">Rule</th><th scope="col">Source</th>
+        </tr></thead>
+        <tbody id="list"></tbody>
+      </table>
+    </div>`;
+  const tbody = view.querySelector("#list");
+  const sortTh = view.querySelector("th[aria-sort]");
+  view.querySelector("[data-sort]").addEventListener("click", () => {
+    newest = !newest;
+    sortTh.setAttribute("aria-sort", newest ? "descending" : "ascending");
+    draw();
+  });
   function draw() {
     const q = query.toLowerCase();
     const rows = list.filter(
       (m) => (!topic || m.topics.includes(topic)) && (!q || `${m.before} ${m.after} ${m.rule}`.toLowerCase().includes(q))
     );
-    ul.innerHTML = rows.length
+    if (!newest) rows.reverse();
+    tbody.innerHTML = rows.length
       ? rows
           .slice(0, 300)
           .map(
-            (m) => `<li><p class="sentence small">${renderDiff(m.before, m.after)}</p>
-            <div class="note"><strong>${esc(m.rule)}</strong><p>${esc(m.category)}, ${dayOf(m.date)}</p>${m.note ? `<p>${esc(m.note)}</p>` : ""}</div></li>`
+            (m) => `<tr><td class="when">${dayOf(m.date)}</td><td class="diff">${renderDiff(m.before, m.after)}</td>
+              <td class="cat">${esc(m.category)}</td><td class="rule">${esc(m.rule)}${m.note ? `<small>${esc(m.note)}</small>` : ""}</td>
+              <td class="src">${sourceOf(m.text_id).short}</td></tr>`
           )
           .join("")
-      : `<li><p class="muted">Nothing matches.</p></li>`;
+      : `<tr><td colspan="5" class="muted">Nothing matches.</td></tr>`;
   }
   view.querySelectorAll("[data-topic]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -1186,24 +1426,33 @@ async function lessonsView(topic) {
   topic = topic || st.topics[0]?.id;
   const lesson = lessons[topic];
   const mine = list.filter((m) => m.topics.includes(topic)).slice(0, 8);
-  view.innerHTML = `<nav class="lesson-nav" aria-label="Topics">${st.topics
-    .map((t) => `<a href="#/lessons/${esc(t.id)}" ${t.id === topic ? 'aria-current="page"' : ""}>${esc(t.title)}</a>`)
-    .join("")}</nav>
-    ${lesson
-      ? `<section class="leaf"><div class="text"><p class="sentence medium">${esc(lesson.summary)}</p>
-          <div class="actions"><a class="button primary" href="#/drill/${esc(topic)}">Practise ${esc(topicTitle(topic))}</a></div></div></section>
-        ${lesson.rules
-          .map(
-            (r) => `<section class="section leaf"><div class="text"><h2>${esc(r.title)}</h2><p class="prose">${esc(r.body)}</p>
-            ${(r.examples || []).map((x) => `<p class="example">${renderDiff(x.bad, x.good)}</p>`).join("")}</div></section>`
-          )
-          .join("")}`
-      : `<p class="muted">No lesson written for this topic yet.</p>`}
-    ${mine.length
-      ? `<section class="section"><h2>From your own writing</h2><ul class="rows">${mine
-          .map((m) => `<li><p class="sentence small">${renderDiff(m.before, m.after)}</p><div class="note"><strong>${esc(m.rule)}</strong><p>${dayOf(m.date)}</p></div></li>`)
-          .join("")}</ul></section>`
-      : ""}`;
+  const nav = `<nav class="posts stack nav" aria-label="Topics">${st.topics
+    .map((t) =>
+      post({
+        href: `#/lessons/${esc(t.id)}`,
+        picto: topicPicto(t.id),
+        title: esc(t.title),
+        sub: t.total ? `${plural(t.total, "mistake")} of yours` : "none of yours yet",
+        current: t.id === topic,
+      })
+    )
+    .join("")}</nav>`;
+  const practise = `<a class="button primary" href="#/drill/${esc(topic)}">Practise ${esc(topicTitle(topic))}</a>`;
+  const body = lesson
+    ? `${sign({ title: esc(lesson.summary), sub: esc(topicTitle(topic)), action: practise, long: true })}
+      ${lesson.rules
+        .map(
+          (r) => `<section class="panel"><h2>${esc(r.title)}</h2><p class="rule-body">${esc(r.body)}</p>
+            ${(r.examples || []).map((x) => `<p class="example">${renderDiff(x.bad, x.good)}</p>`).join("")}</section>`
+        )
+        .join("")}`
+    : `${sign({ title: esc(topicTitle(topic)), sub: "No lesson written for this topic yet", action: practise, long: true })}`;
+  const yours = mine.length
+    ? `<section class="panel"><h2>From your own writing</h2><ul class="papers">${mine
+        .map((m) => `<li class="paper"><p class="sentence small">${renderDiff(m.before, m.after)}</p><p class="muted">${esc(m.rule)} · ${dayOf(m.date)}</p></li>`)
+        .join("")}</ul></section>`
+    : "";
+  view.innerHTML = `<div class="split">${nav}<div class="split-main">${body}${yours}</div></div>`;
 }
 
 /* ---------- router ---------- */
@@ -1241,8 +1490,8 @@ async function route() {
   try {
     await hit[1](hash.match(hit[0]));
   } catch (e) {
-    view.innerHTML = `<section class="leaf"><div class="text"><p class="sentence medium">Something broke while loading this page.</p>
-      <p class="error">${esc(e.message)}</p><p class="muted">Run <code>eng doctor</code> in a terminal to see what is missing.</p></div></section>`;
+    view.innerHTML = `<section class="panel"><h2>Something broke while loading this page</h2>
+      <p class="error">${esc(e.message)}</p><p class="muted">Run <code>eng doctor</code> in a terminal to see what is missing.</p></section>`;
   }
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);

@@ -35,7 +35,6 @@ try {
   browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
   await page.setViewport({ width: 1200, height: 760, deviceScaleFactor: 1 });
-  await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
 
   const list = [];
   let n = 0;
@@ -59,6 +58,8 @@ try {
 
   log("web: today");
   await page.goto(`${base}/#/`, { waitUntil: "networkidle0" });
+  // the build stamp changes every commit and is noise in recordings
+  await page.addStyleTag({ content: ".foot { display: none; }" });
   await page.waitForSelector("a.button.primary");
   await page.evaluate(() => document.fonts.ready);
   await sleep(300);
@@ -130,13 +131,9 @@ try {
     ["drill", "#/drill/the", "[data-choice], [data-skip]"],
     ["mistakes", "#/mistakes", "[data-topic]"],
   ];
-  for (const scheme of ["light", "dark"]) {
-    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
-    for (const [name, hash, ready] of stills) {
-      if (scheme === "dark" && name === "mistakes") continue;
-      await go(hash, ready);
-      await page.screenshot({ path: `${assets}/web-${name}-${scheme}.png` });
-    }
+  for (const [name, hash, ready] of stills) {
+    await go(hash, ready);
+    await page.screenshot({ path: `${assets}/web-${name}.png` });
   }
 } finally {
   await browser?.close();

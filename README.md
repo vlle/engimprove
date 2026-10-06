@@ -11,8 +11,8 @@ in the web app, in the terminal, and as a notification when a topic is ripe.
 
 <table>
   <tr>
-    <td><img src="demo/assets/web-today-light.png" alt="Today: the ripe topics"></td>
-    <td><img src="demo/assets/web-drill-dark.png" alt="A cloze card in dark theme"></td>
+    <td><img src="demo/assets/web-today.png" alt="Today: the next step on a yellow sign, ripe topics as signposts"></td>
+    <td><img src="demo/assets/web-drill.png" alt="A cloze card built from your own sentence"></td>
   </tr>
 </table>
 

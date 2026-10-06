@@ -107,6 +107,41 @@ func TestContext(t *testing.T) {
 	}
 }
 
+func TestBoxesAndNextDue(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	all := []Card{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "unseen"}}
+	tests := []struct {
+		name    string
+		grades  map[string][]bool
+		boxes   []int
+		nextDue string
+	}{
+		{"nothing seen", nil, []int{0, 0, 0, 0, 0, 0}, ""},
+		{
+			"missed and climbed",
+			map[string][]bool{"a": {false}, "b": {true}, "c": {true, true}},
+			[]int{1, 1, 1, 0, 0, 0},
+			now.Add(10 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srs := SRS{}
+			for id, oks := range tt.grades {
+				for _, ok := range oks {
+					srs.Grade(id, ok, now)
+				}
+			}
+			if got := Boxes(all, srs); !reflect.DeepEqual(got, tt.boxes) {
+				t.Fatalf("boxes = %v, want %v", got, tt.boxes)
+			}
+			if got := NextDue(all, srs, now); got != tt.nextDue {
+				t.Fatalf("next due = %q, want %q", got, tt.nextDue)
+			}
+		})
+	}
+}
+
 func TestGradeAndSelect(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	all := []Card{

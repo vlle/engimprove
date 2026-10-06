@@ -5,18 +5,47 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"engimprove/internal/cards"
 	"engimprove/internal/coach"
 	"engimprove/internal/config"
 	"engimprove/internal/data"
+	"engimprove/internal/hook"
 	"engimprove/internal/logbook"
+	"engimprove/internal/speak"
 	"engimprove/internal/testutil"
 )
+
+func TestWeekSpend(t *testing.T) {
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC) // a wednesday
+	tests := []struct {
+		name   string
+		checks []hook.CheckLog
+		recs   []speak.Recording
+		want   float64
+	}{
+		{"nothing", nil, nil, 0},
+		{
+			"only this week counts",
+			[]hook.CheckLog{{TS: "2026-10-06T09:00:00Z", Cost: 0.01}, {TS: "2026-10-04T09:00:00Z", Cost: 0.5}},
+			[]speak.Recording{{TS: "2026-10-07T08:00:00Z", WhisperCost: 0.002, ReviewCost: 0.003}},
+			0.015,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := weekSpend(tt.checks, tt.recs, now); math.Abs(got-tt.want) > 1e-9 {
+				t.Fatalf("spend = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestRuleHistory(t *testing.T) {
 	const rule = "missing definite article before a known referent"
