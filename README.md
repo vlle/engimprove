@@ -206,7 +206,8 @@ a fresh clone fills the rest in on first run.
 - A check failed (network, key) → the prompt sits in `state/queue/failed`;
   `eng check -retry`.
 - Changed the frontend → `go build -o bin/eng ./cmd/eng && eng restart` (the static files
-  are embedded in the binary).
+  are embedded in the binary). While working on the frontend, `eng restart -static web/static`
+  serves it from disk instead: edits show on reload; plain `eng restart` switches back.
 - Tests: `go test ./...`.
 
 ## Demo recordings

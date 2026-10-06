@@ -37,7 +37,8 @@ const usage = `eng — English learning machine
 
   eng serve [-addr 127.0.0.1:7421]        web app + api
   eng open [route]                        start the server if needed and open the browser (route: drill/the, speak, review)
-  eng restart                             restart the background server after a rebuild
+  eng serve -static web/static            serve the frontend from disk: edits show on reload, no rebuild
+  eng restart [-static web/static]        restart the background server after a rebuild (or onto disk files)
   eng install                             scaffold a fresh clone, register Claude Code and opencode hooks
   eng status [-json]                      ripe drills, due reviews, speaking queue
   eng log [-f file.json]                  append mistakes (logbook json on stdin or -f), print repeat counts
@@ -92,7 +93,7 @@ func run(args []string) error {
 	case "open":
 		return openApp(st, cfg, args[1:])
 	case "restart":
-		return restart(st, cfg)
+		return restart(st, cfg, args[1:])
 	case "status":
 		return status(st, cfg, args[1:])
 	case "log":
@@ -324,19 +325,33 @@ func notifyCmd(args []string) error {
 func serve(st data.Store, cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", cfg.Addr, "listen address, keep it on loopback")
+	static := fs.String("static", "", "serve the frontend from this directory: edits show on reload, no rebuild")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	cfg.Addr = *addr
+	files := web.Static()
+	if *static != "" {
+		dir, err := frontendDir(*static)
+		if err != nil {
+			return err
+		}
+		files = os.DirFS(dir)
+		progress("frontend from %s", dir)
+	}
 	srv := &server.Server{
 		Store:  st,
 		Config: cfg,
 		Coach:  coach.New(cfg),
 		Resume: resume.NewLoader(cfg.ResumeDir()),
-		Static: web.Static(),
+		Static: files,
 		Log:    log.New(os.Stderr, "", log.LstdFlags),
 	}
-	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	handler := srv.Handler()
+	if *static != "" {
+		handler = revalidate(handler)
+	}
+	httpSrv := &http.Server{Addr: *addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -355,8 +370,40 @@ func serve(st data.Store, cfg config.Config, args []string) error {
 	return nil
 }
 
+func frontendDir(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(filepath.Join(abs, "index.html")); err != nil {
+		return "", fmt.Errorf("-static %s: no index.html there, pass the frontend directory (web/static)", dir)
+	}
+	return abs, nil
+}
+
+// revalidate keeps the browser from serving stale edited files from cache.
+func revalidate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // restart stops the running server so a rebuilt binary serves the new frontend.
-func restart(st data.Store, cfg config.Config) error {
+func restart(st data.Store, cfg config.Config, args []string) error {
+	fs := flag.NewFlagSet("restart", flag.ContinueOnError)
+	static := fs.String("static", "", "restart serving the frontend from this directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	serveArgs := []string{"serve"}
+	if *static != "" {
+		dir, err := frontendDir(*static)
+		if err != nil {
+			return err
+		}
+		serveArgs = append(serveArgs, "-static", dir)
+	}
 	if raw, err := os.ReadFile(st.Path("state", "serve.pid")); err == nil {
 		if pid, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil {
 			if p, err := os.FindProcess(pid); err == nil {
@@ -373,7 +420,7 @@ func restart(st data.Store, cfg config.Config) error {
 	if alive(cfg) {
 		return fmt.Errorf("server on %s did not stop; it was not started by this eng (no state/serve.pid)", cfg.Addr)
 	}
-	if err := spawn(st, "serve.log", "serve"); err != nil {
+	if err := spawn(st, "serve.log", serveArgs...); err != nil {
 		return err
 	}
 	for range 30 {
