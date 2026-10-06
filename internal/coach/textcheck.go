@@ -11,15 +11,21 @@ import (
 
 // TextCheck is the verdict on one pasted text in the web app.
 type TextCheck struct {
-	Corrected string             `json:"corrected"`
-	Errors    []logbook.NewError `json:"errors"`
-	Cost      float64            `json:"cost"`
+	Corrected string `json:"corrected"`
+	// Perception is how a native reader takes the message and its author.
+	Perception string `json:"perception"`
+	// Native is the message rephrased the way a native colleague would write it.
+	Native string             `json:"native"`
+	Errors []logbook.NewError `json:"errors"`
+	Cost   float64            `json:"cost"`
 }
 
 var textCheckSchema = `{"type":"object","additionalProperties":false,"properties":{
 "corrected":{"type":"string"},
+"perception":{"type":"string"},
+"native":{"type":"string"},
 "errors":{"type":"array","items":` + fmt.Sprintf(errorItem, `"grammar","punctuation","lexical","spelling","style"`) + `}},
-"required":["corrected","errors"]}`
+"required":["corrected","perception","native","errors"]}`
 
 // CheckText reviews a pasted text and finds mistakes worth learning from.
 func (c *Coach) CheckText(ctx context.Context, s data.Store, text string) (TextCheck, string, error) {
@@ -50,6 +56,11 @@ The category must describe the change itself: adding or removing a/an/the is alw
 Reuse an existing rule only when it names exactly the same mistake; otherwise write a new short rule in the same style.
 note: why, at most 12 words, in English.
 corrected: the whole text with only grammar, punctuation, lexical and spelling mistakes fixed; style entries are NOT applied there.
+perception: 1-2 short lines on how a native reader takes the message and its author: tone, politeness, directness,
+and where the word choice exposes a non-native writer. Judge the wording, not the content and not the grammar spots
+you logged. Plain text, no markdown. Never leave this empty.
+native: the whole message rewritten the way a native colleague of the same register would naturally phrase it.
+Same meaning, same level of formality the writer chose; do not inflate, do not explain. Never leave this empty.
 No mistakes: errors [], corrected = text as-is.
 
 `, c.cfg.Language)
@@ -78,19 +89,19 @@ No mistakes: errors [], corrected = text as-is.
 
 // GrowthInput is the data the growth card cheer is built from.
 type GrowthInput struct {
-	Now            string  `json:"now"`
-	Streak         int     `json:"streak"`
-	WeekRate       float64 `json:"week_rate"`
-	PrevWeekRate   float64 `json:"prev_week_rate"`
-	TotalMistakes  int     `json:"total_mistakes"`
-	TotalTexts     int     `json:"total_texts"`
-	DrillAccuracy  float64 `json:"drill_accuracy"`
-	RipeTopics     int     `json:"ripe_topics"`
-	TotalTopics    int     `json:"total_topics"`
-	TopRule        string  `json:"top_rule"`
-	TopRuleCount   int     `json:"top_rule_count"`
-	BestMonthRate  float64 `json:"best_month_rate"`
-	CurrentRate    float64 `json:"current_rate"`
+	Now           string  `json:"now"`
+	Streak        int     `json:"streak"`
+	WeekRate      float64 `json:"week_rate"`
+	PrevWeekRate  float64 `json:"prev_week_rate"`
+	TotalMistakes int     `json:"total_mistakes"`
+	TotalTexts    int     `json:"total_texts"`
+	DrillAccuracy float64 `json:"drill_accuracy"`
+	RipeTopics    int     `json:"ripe_topics"`
+	TotalTopics   int     `json:"total_topics"`
+	TopRule       string  `json:"top_rule"`
+	TopRuleCount  int     `json:"top_rule_count"`
+	BestMonthRate float64 `json:"best_month_rate"`
+	CurrentRate   float64 `json:"current_rate"`
 }
 
 var growthSchema = `{"type":"object","additionalProperties":false,"properties":{

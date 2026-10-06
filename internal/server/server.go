@@ -18,9 +18,9 @@ import (
 	"time"
 	"unicode"
 
+	"engimprove/internal/buildinfo"
 	"engimprove/internal/cards"
 	"engimprove/internal/coach"
-	"engimprove/internal/buildinfo"
 	"engimprove/internal/config"
 	"engimprove/internal/data"
 	"engimprove/internal/hook"
@@ -520,10 +520,10 @@ func (s *Server) workEnglish(w http.ResponseWriter, r *http.Request) {
 }
 
 type workCategory struct {
-	ID       string   `json:"id"`
-	Title    string   `json:"title"`
-	Phrases  []phrase `json:"phrases,omitempty"`
-	Prompts  []string `json:"prompts,omitempty"`
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Phrases []phrase `json:"phrases,omitempty"`
+	Prompts []string `json:"prompts,omitempty"`
 }
 
 type phrase struct {
@@ -721,12 +721,16 @@ func (s *Server) speakReview(w http.ResponseWriter, r *http.Request) {
 
 // checkedText is one pasted text between its LLM check and the confirm-to-log step.
 type checkedText struct {
-	ID        string             `json:"id"`
-	TS        string             `json:"ts"`
-	TextID    string             `json:"text_id"`
-	Original  string             `json:"original"`
-	Corrected string             `json:"corrected"`
-	Errors    []logbook.NewError `json:"errors"`
+	ID        string `json:"id"`
+	TS        string `json:"ts"`
+	TextID    string `json:"text_id"`
+	Original  string `json:"original"`
+	Corrected string `json:"corrected"`
+	// Perception is how a native reader takes the message; Native is a native phrasing.
+	// Advice only, never logged.
+	Perception string             `json:"perception,omitempty"`
+	Native     string             `json:"native,omitempty"`
+	Errors     []logbook.NewError `json:"errors"`
 	// Counted is how many times each rule was already in the database at check time.
 	Counted map[string]int `json:"counted,omitempty"`
 	Backend string         `json:"backend"`
@@ -760,14 +764,16 @@ func (s *Server) checkText(w http.ResponseWriter, r *http.Request) {
 		res.Corrected = req.Text
 	}
 	out := checkedText{
-		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
-		TS:        time.Now().Format(time.RFC3339),
-		TextID:    data.Today() + "-web-" + textSlug(req.Text),
-		Original:  req.Text,
-		Corrected: res.Corrected,
-		Errors:    res.Errors,
-		Backend:   backend,
-		Cost:      res.Cost,
+		ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
+		TS:         time.Now().Format(time.RFC3339),
+		TextID:     data.Today() + "-web-" + textSlug(req.Text),
+		Original:   req.Text,
+		Corrected:  res.Corrected,
+		Perception: res.Perception,
+		Native:     res.Native,
+		Errors:     res.Errors,
+		Backend:    backend,
+		Cost:       res.Cost,
 	}
 	if entries, err := s.Store.Entries(); err == nil {
 		out.Counted = ruleCount(entries)
